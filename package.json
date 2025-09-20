@@ -1,0 +1,16 @@
+{
+  "name": "google-drive-cache-scanner",
+  "version": "1.0.0",
+  "description": "Script to scan Google Drive folder children with 2 depth levels",
+  "main": "cache.js",
+  "dependencies": {
+    "googleapis": "^128.0.0",
+    "dotenv": "^16.3.1"
+  },
+  "scripts": {
+    "start": "node cache.js",
+    "cache-peserta": "node cache_peserta.js",
+    "share-folders": "node share_peserta_folder.js",
+    "full-process": "npm run start && npm run cache-peserta && npm run share-folders"
+  }
+}
