@@ -2,6 +2,7 @@ const { google } = require('googleapis');
 const fs = require('fs');
 const path = require('path');
 const Table = require('cli-table3');
+const { Worker } = require('worker_threads');
 require('dotenv').config();
 
 class BatchShareMonitor {
@@ -13,10 +14,21 @@ class BatchShareMonitor {
         this.shareResults = [];
         this.batchUpdates = [];
 
-        // Batch configuration
-        this.batchSize = 10; // Process 10 participants at a time
-        this.delayBetweenBatches = 2000; // 2 seconds delay between batches
-        this.delayBetweenRequests = 200; // 200ms delay between individual requests
+        // Multi-worker configuration
+        this.workerCount = 16;
+        this.workers = [];
+        this.taskQueue = [];
+        this.activeWorkers = 0;
+        this.completedTasks = 0;
+
+        // Worker status tracking
+        this.workerStats = Array(this.workerCount).fill(null).map((_, index) => ({
+            id: index,
+            status: 'idle', // idle, working, error
+            currentParticipant: null,
+            tasksCompleted: 0,
+            errors: 0
+        }));
 
         // Progress tracking
         this.progressStats = {
@@ -25,8 +37,7 @@ class BatchShareMonitor {
             successful: 0,
             failed: 0,
             errors: 0,
-            currentBatch: 0,
-            totalBatches: 0
+            activeWorkers: 0
         };
 
         // Error tracking
@@ -186,21 +197,50 @@ class BatchShareMonitor {
         const percentage = (count) => this.progressStats.total > 0 ?
             ((count / this.progressStats.total) * 100).toFixed(1) + '%' : '0%';
 
+        const queueLength = this.taskQueue.length;
+        const throughput = elapsed > 0 ? (this.progressStats.processed / elapsed).toFixed(2) : '0';
+
         table.push(
             ['📊 Total Participants', this.progressStats.total, '100%'],
-            ['⚡ Current Batch', `${this.progressStats.currentBatch}/${this.progressStats.totalBatches}`, '---'],
+            ['👥 Active Workers', `${this.progressStats.activeWorkers}/${this.workerCount}`, '---'],
+            ['📋 Queue Length', queueLength, '---'],
             ['🔄 Processed', this.progressStats.processed, percentage(this.progressStats.processed)],
             ['✅ Successful', this.progressStats.successful, percentage(this.progressStats.successful)],
             ['❌ Failed', this.progressStats.failed, percentage(this.progressStats.failed)],
             ['⚠️ Errors', this.progressStats.errors, percentage(this.progressStats.errors)],
+            ['⚡ Throughput', `${throughput}/s`, '---'],
             ['⏱️ Elapsed Time', `${elapsed}s`, '---'],
             ['⏳ ETA', eta > 0 ? `${eta}s` : '---', '---']
         );
 
         console.clear();
-        console.log('🚀 BATCH FOLDER SHARING MONITOR');
-        console.log('================================');
+        console.log('🚀 MULTI-WORKER FOLDER SHARING MONITOR');
+        console.log('======================================');
         console.log(table.toString());
+
+        // Worker status table
+        const workerTable = new Table({
+            head: ['Worker', 'Status', 'Current Task', 'Completed', 'Errors'],
+            colWidths: [8, 10, 25, 10, 8]
+        });
+
+        this.workerStats.forEach(worker => {
+            const statusIcon = worker.status === 'working' ? '🔄' :
+                             worker.status === 'error' ? '❌' : '💤';
+            const currentTask = worker.currentParticipant ?
+                worker.currentParticipant.substring(0, 20) + '...' : '---';
+
+            workerTable.push([
+                `W${worker.id}`,
+                `${statusIcon} ${worker.status}`,
+                currentTask,
+                worker.tasksCompleted,
+                worker.errors
+            ]);
+        });
+
+        console.log('\n👥 Worker Status:');
+        console.log(workerTable.toString());
 
         if (this.errorLog.length > 0) {
             console.log('\n🔴 Recent Errors:');
@@ -211,13 +251,160 @@ class BatchShareMonitor {
         }
     }
 
-    async processBatch(participants) {
-        const batchResults = [];
+    async initializeWorkers() {
+        console.log(`🚀 Initializing ${this.workerCount} workers...`);
 
-        for (const participant of participants) {
+        for (let i = 0; i < this.workerCount; i++) {
+            const worker = new Worker(path.join(__dirname, 'share-worker.js'), {
+                workerData: { workerId: i }
+            });
+
+            worker.on('message', (message) => {
+                this.handleWorkerMessage(message);
+            });
+
+            worker.on('error', (error) => {
+                console.error(`❌ Worker ${i} error:`, error);
+                this.workerStats[i].status = 'error';
+                this.workerStats[i].errors++;
+            });
+
+            worker.on('exit', (code) => {
+                if (code !== 0) {
+                    console.error(`❌ Worker ${i} exited with code ${code}`);
+                }
+            });
+
+            this.workers[i] = worker;
+            worker.postMessage({ type: 'init' });
+        }
+
+        // Wait for all workers to initialize
+        return new Promise((resolve) => {
+            const checkInitialization = () => {
+                const initializedWorkers = this.workerStats.filter(w => w.status === 'idle').length;
+                if (initializedWorkers === this.workerCount) {
+                    console.log(`✅ All ${this.workerCount} workers initialized`);
+                    resolve();
+                } else {
+                    setTimeout(checkInitialization, 100);
+                }
+            };
+            checkInitialization();
+        });
+    }
+
+    handleWorkerMessage(message) {
+        const { type, workerId, result, error } = message;
+        const worker = this.workerStats[workerId];
+
+        switch (type) {
+            case 'initialized':
+                worker.status = 'idle';
+                console.log(`🔧 Worker ${workerId} initialized and ready`);
+                break;
+
+            case 'success':
+                worker.status = 'idle';
+                worker.tasksCompleted++;
+                worker.currentParticipant = null;
+
+                this.shareResults.push(result);
+                this.progressStats.processed++;
+                this.progressStats.successful++;
+                this.progressStats.activeWorkers--;
+
+                // Add to batch updates
+                this.batchUpdates.push({
+                    range: `Form Response 1!I${result.participant.row}`,
+                    values: [['TRUE']]
+                });
+                this.batchUpdates.push({
+                    range: `Form Response 1!J${result.participant.row}`,
+                    values: [[new Date().toISOString()]]
+                });
+
+                this.assignNextTask(workerId);
+                break;
+
+            case 'error':
+                worker.status = 'idle';
+                worker.errors++;
+                worker.currentParticipant = null;
+
+                const errorInfo = {
+                    timestamp: new Date().toISOString(),
+                    participant: result.participant.nama,
+                    email: result.email,
+                    folderId: result.folderId,
+                    error: result.error,
+                    errorCode: result.errorCode,
+                    workerId
+                };
+
+                this.errorLog.push(errorInfo);
+                this.shareResults.push(result);
+                this.progressStats.processed++;
+                this.progressStats.failed++;
+                this.progressStats.activeWorkers--;
+
+                // Add to batch updates
+                this.batchUpdates.push({
+                    range: `Form Response 1!I${result.participant.row}`,
+                    values: [['FALSE']]
+                });
+                this.batchUpdates.push({
+                    range: `Form Response 1!J${result.participant.row}`,
+                    values: [[`Failed: ${new Date().toISOString()}`]]
+                });
+
+                this.assignNextTask(workerId);
+                break;
+        }
+
+        this.displayMonitoringTable();
+    }
+
+    assignNextTask(workerId) {
+        if (this.taskQueue.length === 0) {
+            return;
+        }
+
+        const task = this.taskQueue.shift();
+        const worker = this.workerStats[workerId];
+
+        worker.status = 'working';
+        worker.currentParticipant = task.participant.nama;
+        this.progressStats.activeWorkers++;
+
+        this.workers[workerId].postMessage({
+            type: 'share',
+            task
+        });
+    }
+
+    async processWithWorkers() {
+        const participantsToProcess = this.cachedParticipants.filter(p => {
+            if (p.isShared) return false;
+            const folderId = this.findFolderIdForParticipant(p.nama);
+            return folderId !== null;
+        });
+
+        this.progressStats.total = participantsToProcess.length;
+
+        console.log(`📂 Found ${participantsToProcess.length} participants to process with ${this.workerCount} workers`);
+
+        if (participantsToProcess.length === 0) {
+            console.log('✅ No participants need folder sharing');
+            return;
+        }
+
+        // Build task queue
+        for (const participant of participantsToProcess) {
             const folderId = this.findFolderIdForParticipant(participant.nama);
 
             if (!folderId) {
+                // Handle participants without folders immediately
                 const errorResult = {
                     success: false,
                     error: 'Folder ID not found',
@@ -225,9 +412,7 @@ class BatchShareMonitor {
                     folderId: null
                 };
 
-                batchResults.push(errorResult);
                 this.shareResults.push(errorResult);
-
                 this.progressStats.processed++;
                 this.progressStats.errors++;
 
@@ -242,84 +427,50 @@ class BatchShareMonitor {
                 continue;
             }
 
-            const shareResult = await this.shareFolder(folderId, participant.email, participant.nama);
-            shareResult.participant = participant;
-
-            batchResults.push(shareResult);
-            this.shareResults.push(shareResult);
-
-            this.progressStats.processed++;
-            if (shareResult.success) {
-                this.progressStats.successful++;
-                this.batchUpdates.push({
-                    range: `Form Response 1!I${participant.row}`,
-                    values: [['TRUE']]
-                });
-                this.batchUpdates.push({
-                    range: `Form Response 1!J${participant.row}`,
-                    values: [[new Date().toISOString()]]
-                });
-            } else {
-                this.progressStats.failed++;
-                this.batchUpdates.push({
-                    range: `Form Response 1!I${participant.row}`,
-                    values: [['FALSE']]
-                });
-                this.batchUpdates.push({
-                    range: `Form Response 1!J${participant.row}`,
-                    values: [[`Failed: ${new Date().toISOString()}`]]
-                });
-            }
-
-            this.displayMonitoringTable();
-
-            // Delay between individual requests to avoid rate limiting
-            if (participants.indexOf(participant) < participants.length - 1) {
-                await new Promise(resolve => setTimeout(resolve, this.delayBetweenRequests));
-            }
+            this.taskQueue.push({
+                folderId,
+                email: participant.email,
+                participant
+            });
         }
 
-        return batchResults;
+        console.log(`📋 Created task queue with ${this.taskQueue.length} sharing tasks`);
+
+        // Start workers
+        await this.initializeWorkers();
+
+        // Assign initial tasks
+        for (let i = 0; i < Math.min(this.workerCount, this.taskQueue.length); i++) {
+            this.assignNextTask(i);
+        }
+
+        // Wait for all tasks to complete
+        return new Promise((resolve) => {
+            const checkCompletion = () => {
+                if (this.taskQueue.length === 0 && this.progressStats.activeWorkers === 0) {
+                    this.terminateWorkers();
+                    resolve();
+                } else {
+                    setTimeout(checkCompletion, 500);
+                }
+            };
+            checkCompletion();
+        });
+    }
+
+    terminateWorkers() {
+        console.log('🛑 Terminating all workers...');
+        this.workers.forEach(worker => {
+            worker.postMessage({ type: 'terminate' });
+            worker.terminate();
+        });
     }
 
     async processBatchSharing() {
-        console.log('🚀 Starting batch folder sharing process...');
-
-        const participantsToProcess = this.cachedParticipants.filter(p => {
-            if (p.isShared) return false;
-            const folderId = this.findFolderIdForParticipant(p.nama);
-            return folderId !== null;
-        });
-
-        this.progressStats.total = participantsToProcess.length;
-        this.progressStats.totalBatches = Math.ceil(participantsToProcess.length / this.batchSize);
-
-        console.log(`📂 Found ${participantsToProcess.length} participants to process in ${this.progressStats.totalBatches} batches`);
-        console.log(`⚙️ Batch size: ${this.batchSize}, Delay between batches: ${this.delayBetweenBatches}ms`);
-
-        if (participantsToProcess.length === 0) {
-            console.log('✅ No participants need folder sharing');
-            return;
-        }
-
-        // Process in batches
-        for (let i = 0; i < participantsToProcess.length; i += this.batchSize) {
-            this.progressStats.currentBatch = Math.floor(i / this.batchSize) + 1;
-
-            const batch = participantsToProcess.slice(i, i + this.batchSize);
-            console.log(`\n🔄 Processing batch ${this.progressStats.currentBatch}/${this.progressStats.totalBatches} (${batch.length} participants)`);
-
-            await this.processBatch(batch);
-
-            // Delay between batches (except for the last batch)
-            if (i + this.batchSize < participantsToProcess.length) {
-                console.log(`⏸️ Waiting ${this.delayBetweenBatches}ms before next batch...`);
-                await new Promise(resolve => setTimeout(resolve, this.delayBetweenBatches));
-            }
-        }
-
+        console.log('🚀 Starting multi-worker folder sharing process...');
+        await this.processWithWorkers();
         this.displayMonitoringTable();
-        console.log(`\n✅ Completed batch processing for ${participantsToProcess.length} participants`);
+        console.log(`\n✅ Completed multi-worker processing`);
     }
 
     async saveDetailedResults() {
@@ -330,10 +481,9 @@ class BatchShareMonitor {
 
             const detailedResults = {
                 timestamp: new Date().toISOString(),
-                batchConfig: {
-                    batchSize: this.batchSize,
-                    delayBetweenBatches: this.delayBetweenBatches,
-                    delayBetweenRequests: this.delayBetweenRequests
+                workerConfig: {
+                    workerCount: this.workerCount,
+                    maxConcurrency: this.workerCount
                 },
                 statistics: {
                     totalProcessed: this.shareResults.length,
@@ -449,7 +599,7 @@ class BatchShareMonitor {
         const failed = this.shareResults.filter(r => !r.success);
 
         console.log(`⏱️ Total Processing Time: ${totalTime} seconds`);
-        console.log(`📦 Batch Configuration: ${this.batchSize} per batch, ${this.delayBetweenBatches}ms delay`);
+        console.log(`👥 Worker Configuration: ${this.workerCount} workers, concurrent processing`);
         console.log(`📊 Total Processed: ${this.shareResults.length}`);
         console.log(`✅ Successful Shares: ${successful.length}`);
         console.log(`❌ Failed Shares: ${failed.length}`);
