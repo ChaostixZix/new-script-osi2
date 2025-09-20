@@ -1,2 +1,4 @@
 .env
 service.json
+__MACOSX/
+.DS_Store
