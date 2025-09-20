@@ -12,7 +12,7 @@
 
 When analyzing large codebases or multiple files that might exceed context limits, use the Gemini CLI with its massive context window. Use `gemini -p` to leverage Google Gemini's large context capacity.
 
-**IMPORTANT**: Always add `--timeout 60` flag to Gemini CLI commands to set a maximum timeout of 1 minute.
+**IMPORTANT**: Use Gemini CLI commands for large codebase analysis.
 
 ## Retry Strategy
 If a Gemini CLI command fails:
@@ -29,48 +29,48 @@ Use the `@` syntax to include files and directories in your Gemini prompts. The 
 ### Examples:
 
 **Single file analysis:**
-gemini --timeout 60 -p "@src/main.py Explain this file's purpose and structure"
+gemini -p "@src/main.py Explain this file's purpose and structure"
 
 Multiple files:
-gemini --timeout 60 -p "@package.json @src/index.js Analyze the dependencies used in the code"
+gemini -p "@package.json @src/index.js Analyze the dependencies used in the code"
 
 Entire directory:
-gemini --timeout 60 -p "@src/ Summarize the architecture of this codebase"
+gemini -p "@src/ Summarize the architecture of this codebase"
 
 Multiple directories:
-gemini --timeout 60 -p "@src/ @tests/ Analyze test coverage for the source code"
+gemini -p "@src/ @tests/ Analyze test coverage for the source code"
 
 Current directory and subdirectories:
-gemini --timeout 60 -p "@./ Give me an overview of this entire project"
+gemini -p "@./ Give me an overview of this entire project"
 
 # Or use -a flag:
-gemini --timeout 60 -a -p "Analyze the project structure and dependencies"
+gemini -a -p "Analyze the project structure and dependencies"
 
 ## Implementation Verification Examples
 
 Check if a feature is implemented:
-gemini --timeout 60 -p "@src/ @lib/ Has dark mode been implemented in this codebase? Show me the relevant files and functions"
+gemini -p "@src/ @lib/ Has dark mode been implemented in this codebase? Show me the relevant files and functions"
 
 Verify authentication implementation:
-gemini --timeout 60 -p "@src/ @middleware/ Is JWT authentication implemented? List all auth-related endpoints and middleware"
+gemini -p "@src/ @middleware/ Is JWT authentication implemented? List all auth-related endpoints and middleware"
 
 Check for specific patterns:
-gemini --timeout 60 -p "@src/ Are there any React hooks that handle WebSocket connections? List them with file paths"
+gemini -p "@src/ Are there any React hooks that handle WebSocket connections? List them with file paths"
 
 Verify error handling:
-gemini --timeout 60 -p "@src/ @api/ Is proper error handling implemented for all API endpoints? Show examples of try-catch blocks"
+gemini -p "@src/ @api/ Is proper error handling implemented for all API endpoints? Show examples of try-catch blocks"
 
 Check for rate limiting:
-gemini --timeout 60 -p "@backend/ @middleware/ Is rate limiting implemented for the API? Show the implementation details"
+gemini -p "@backend/ @middleware/ Is rate limiting implemented for the API? Show the implementation details"
 
 Verify caching strategy:
-gemini --timeout 60 -p "@src/ @lib/ @services/ Is Redis caching implemented? List all cache-related functions and their usage"
+gemini -p "@src/ @lib/ @services/ Is Redis caching implemented? List all cache-related functions and their usage"
 
 Check for specific security measures:
-gemini --timeout 60 -p "@src/ @api/ Are SQL injection protections implemented? Show how user inputs are sanitized"
+gemini -p "@src/ @api/ Are SQL injection protections implemented? Show how user inputs are sanitized"
 
 Verify test coverage for features:
-gemini --timeout 60 -p "@src/payment/ @tests/ Is the payment processing module fully tested? List all test cases"
+gemini -p "@src/payment/ @tests/ Is the payment processing module fully tested? List all test cases"
 
 ## When to Use Gemini CLI
 
@@ -95,13 +95,13 @@ For ANY failed Gemini command, you MUST:
 Example retry sequence:
 ```bash
 # Attempt 1
-gemini --timeout 60 -a -p "Analyze this codebase comprehensively"
+gemini -a -p "Analyze this codebase comprehensively"
 
 # Attempt 2 (if failed)
-gemini --timeout 60 -a -p "Analyze this codebase comprehensively"
+gemini -a -p "Analyze this codebase comprehensively"
 
 # Attempt 3 (if failed again) 
-gemini --timeout 60 -p "@app/ @lib/ @components/ Analyze the main application structure"
+gemini -p "@app/ @lib/ @components/ Analyze the main application structure"
 
 # Attempt 4: Manual fallback only if all 3 attempts failed
 ```

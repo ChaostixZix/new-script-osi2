@@ -1,6 +1,7 @@
 const { google } = require('googleapis');
 const fs = require('fs');
 const path = require('path');
+const Table = require('cli-table3');
 require('dotenv').config();
 
 class FolderShareManager {
@@ -11,6 +12,13 @@ class FolderShareManager {
         this.scanResults = {};
         this.shareResults = [];
         this.batchUpdates = [];
+        this.progressStats = {
+            total: 0,
+            processed: 0,
+            successful: 0,
+            failed: 0,
+            errors: 0
+        };
     }
 
     /**
@@ -167,20 +175,47 @@ class FolderShareManager {
     }
 
     /**
+     * Display progress table
+     */
+    displayProgressTable() {
+        const table = new Table({
+            head: ['Status', 'Count', 'Percentage'],
+            colWidths: [15, 10, 15]
+        });
+
+        const percentage = (count) => this.progressStats.total > 0 ? ((count / this.progressStats.total) * 100).toFixed(1) + '%' : '0%';
+
+        table.push(
+            ['Total', this.progressStats.total, '100%'],
+            ['Processed', this.progressStats.processed, percentage(this.progressStats.processed)],
+            ['✅ Successful', this.progressStats.successful, percentage(this.progressStats.successful)],
+            ['❌ Failed', this.progressStats.failed, percentage(this.progressStats.failed)],
+            ['⚠️ Errors', this.progressStats.errors, percentage(this.progressStats.errors)]
+        );
+
+        console.clear();
+        console.log('📊 FOLDER SHARING PROGRESS');
+        console.log(table.toString());
+    }
+
+    /**
      * Process sharing for all participants
      */
     async processSharing() {
         console.log('🚀 Starting folder sharing process...');
-        
+
         // Filter participants who are not yet shared and have matching folders
         const participantsToProcess = this.cachedParticipants.filter(p => {
             if (p.isShared) return false;
             const folderId = this.findFolderIdForParticipant(p.nama);
             return folderId !== null;
         });
-        
+
+        this.progressStats.total = participantsToProcess.length;
+        this.displayProgressTable();
+
         console.log(`📂 Found ${participantsToProcess.length} participants with folders that need sharing (out of ${this.cachedParticipants.length} total)`);
-        
+
         if (participantsToProcess.length === 0) {
             console.log('✅ No participants need folder sharing - all folders are already shared or don\'t exist');
             return;
@@ -198,7 +233,11 @@ class FolderShareManager {
                     participant,
                     folderId: null
                 });
-                
+
+                this.progressStats.processed++;
+                this.progressStats.errors++;
+                this.displayProgressTable();
+
                 // Set isShared to false for failed shares
                 this.batchUpdates.push({
                     range: `Form Response 1!I${participant.row}`, // isShared column
@@ -213,11 +252,20 @@ class FolderShareManager {
 
             // Share the folder
             const shareResult = await this.shareFolder(folderId, participant.email, participant.nama);
-            
+
             this.shareResults.push({
                 ...shareResult,
                 participant
             });
+
+            // Update progress stats
+            this.progressStats.processed++;
+            if (shareResult.success) {
+                this.progressStats.successful++;
+            } else {
+                this.progressStats.failed++;
+            }
+            this.displayProgressTable();
 
             // Prepare batch update for Google Sheets
             if (shareResult.success) {
@@ -245,6 +293,8 @@ class FolderShareManager {
             await new Promise(resolve => setTimeout(resolve, 100));
         }
 
+        // Final display
+        this.displayProgressTable();
         console.log(`✅ Completed sharing process for ${participantsToProcess.length} participants`);
     }
 
@@ -277,6 +327,15 @@ class FolderShareManager {
             console.log(`💾 Share results saved to: ${outputPath}`);
             console.log(`✅ Successfully shared: ${successfulShares.length} folders`);
             console.log(`❌ Failed shares: ${failedShares.length} folders (saved for retry)`);
+
+            // Log what was removed from JSON (successful shares)
+            if (successfulShares.length > 0) {
+                console.log(`\n🗑️ Removed from JSON (successfully shared):`);
+                successfulShares.forEach((result, index) => {
+                    console.log(`${index + 1}. ${result.participant.nama} (${result.participant.email}) - Row ${result.participant.row}`);
+                });
+                console.log(`📝 These ${successfulShares.length} participants were marked as isShared=TRUE in Google Sheets`);
+            }
         } catch (error) {
             console.error('❌ Error saving share results:', error.message);
         }
@@ -350,6 +409,7 @@ class FolderShareManager {
             });
 
             console.log(`✅ Successfully updated ${updatedBatchUpdates.length} cells in Google Sheets`);
+            console.log(`📝 Updated rows in sheets: ${this.batchUpdates.map(u => u.range.match(/\d+/)?.[0]).filter(Boolean).join(', ')}`);
             return response.data;
 
         } catch (error) {
