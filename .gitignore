@@ -2,3 +2,4 @@
 service.json
 __MACOSX/
 .DS_Store
+node_modules/
