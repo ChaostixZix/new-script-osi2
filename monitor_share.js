@@ -5,6 +5,41 @@ const Table = require('cli-table3');
 const { Worker } = require('worker_threads');
 require('dotenv').config();
 
+// Environment variables validation
+function validateEnvironmentVariables() {
+    const requiredVars = [
+        'GOOGLE_SHEET_ID',
+        'WORKSHEET_NAME'
+    ];
+    
+    const missingVars = [];
+    
+    for (const varName of requiredVars) {
+        if (!process.env[varName]) {
+            missingVars.push(varName);
+        }
+    }
+    
+    if (missingVars.length > 0) {
+        console.error('❌ Missing required environment variables:');
+        missingVars.forEach(varName => {
+            console.error(`   - ${varName}`);
+        });
+        console.error('\n📝 Please add these variables to your .env file:');
+        missingVars.forEach(varName => {
+            console.error(`   ${varName}=your_value_here`);
+        });
+        console.error('\n💡 Example:');
+        console.error('   GOOGLE_SHEET_ID=1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms');
+        console.error('   WORKSHEET_NAME=Form Response 1');
+        process.exit(1);
+    }
+    
+    console.log('✅ All required environment variables are set');
+    console.log(`📊 Google Sheet ID: ${process.env.GOOGLE_SHEET_ID}`);
+    console.log(`📋 Worksheet Name: ${process.env.WORKSHEET_NAME}`);
+}
+
 class BatchShareMonitor {
     constructor() {
         this.drive = null;
@@ -43,6 +78,12 @@ class BatchShareMonitor {
         // Error tracking
         this.errorLog = [];
         this.startTime = new Date();
+        
+        // History tracking for resume functionality
+        this.historyFile = path.join(__dirname, 'monitor_share_history.json');
+        this.processedParticipants = new Set(); // Track processed participants
+        this.batchSize = parseInt(process.env.BATCH_SIZE) || 10; // Batch size for history saves
+        this.lastBatchSave = 0;
     }
 
     async initialize() {
@@ -112,6 +153,115 @@ class BatchShareMonitor {
         } catch (error) {
             console.error('❌ Error loading scan results:', error.message);
             throw error;
+        }
+    }
+
+    /**
+     * Load previous processing history to enable resume functionality
+     */
+    loadProcessingHistory() {
+        try {
+            if (!fs.existsSync(this.historyFile)) {
+                console.log('📝 No previous processing history found. Starting fresh.');
+                return;
+            }
+
+            const historyData = JSON.parse(fs.readFileSync(this.historyFile, 'utf8'));
+            
+            // Load processed participants
+            if (historyData.processedParticipants) {
+                this.processedParticipants = new Set(historyData.processedParticipants);
+                console.log(`📂 Loaded ${this.processedParticipants.size} previously processed participants`);
+            }
+
+            // Load previous share results
+            if (historyData.shareResults) {
+                this.shareResults = historyData.shareResults;
+                console.log(`📂 Loaded ${this.shareResults.length} previous share results`);
+            }
+
+            // Load previous batch updates
+            if (historyData.batchUpdates) {
+                this.batchUpdates = historyData.batchUpdates;
+                console.log(`📂 Loaded ${this.batchUpdates.length} previous batch updates`);
+            }
+
+            // Load error log
+            if (historyData.errorLog) {
+                this.errorLog = historyData.errorLog;
+                console.log(`📂 Loaded ${this.errorLog.length} previous errors`);
+            }
+
+            // Update progress stats
+            if (historyData.progressStats) {
+                this.progressStats = { ...this.progressStats, ...historyData.progressStats };
+            }
+
+            console.log('✅ Processing history loaded successfully');
+            
+        } catch (error) {
+            console.error('❌ Error loading processing history:', error.message);
+            console.log('🔄 Starting fresh (history file corrupted)');
+            this.processedParticipants = new Set();
+        }
+    }
+
+    /**
+     * Save current processing progress to history file
+     */
+    saveProcessingHistory() {
+        try {
+            const historyData = {
+                timestamp: new Date().toISOString(),
+                processedParticipants: Array.from(this.processedParticipants),
+                shareResults: this.shareResults,
+                batchUpdates: this.batchUpdates,
+                errorLog: this.errorLog,
+                progressStats: this.progressStats,
+                startTime: this.startTime.toISOString()
+            };
+
+            fs.writeFileSync(this.historyFile, JSON.stringify(historyData, null, 2));
+            console.log(`💾 Processing history saved (${this.processedParticipants.size} participants processed)`);
+            
+        } catch (error) {
+            console.error('❌ Error saving processing history:', error.message);
+        }
+    }
+
+    /**
+     * Check if participant has already been processed
+     */
+    isParticipantProcessed(participant) {
+        const participantKey = `${participant.nama}|${participant.email}`;
+        return this.processedParticipants.has(participantKey);
+    }
+
+    /**
+     * Mark participant as processed
+     */
+    markParticipantProcessed(participant) {
+        const participantKey = `${participant.nama}|${participant.email}`;
+        this.processedParticipants.add(participantKey);
+        
+        // Save history every batchSize completions
+        if (this.processedParticipants.size - this.lastBatchSave >= this.batchSize) {
+            this.saveProcessingHistory();
+            this.lastBatchSave = this.processedParticipants.size;
+        }
+    }
+
+    /**
+     * Clean up history file after successful completion
+     */
+    cleanupHistory() {
+        try {
+            if (fs.existsSync(this.historyFile)) {
+                fs.unlinkSync(this.historyFile);
+                console.log('🧹 Processing history cleaned up');
+            }
+        } catch (error) {
+            console.error('❌ Error cleaning up history:', error.message);
         }
     }
 
@@ -314,6 +464,9 @@ class BatchShareMonitor {
                 this.progressStats.successful++;
                 this.progressStats.activeWorkers--;
 
+                // Mark participant as processed
+                this.markParticipantProcessed(result.participant);
+
                 // Add to batch updates
                 this.batchUpdates.push({
                     range: `Form Response 1!I${result.participant.row}`,
@@ -347,6 +500,9 @@ class BatchShareMonitor {
                 this.progressStats.processed++;
                 this.progressStats.failed++;
                 this.progressStats.activeWorkers--;
+
+                // Mark participant as processed (even if failed)
+                this.markParticipantProcessed(result.participant);
 
                 // Add to batch updates
                 this.batchUpdates.push({
@@ -386,6 +542,7 @@ class BatchShareMonitor {
     async processWithWorkers() {
         const participantsToProcess = this.cachedParticipants.filter(p => {
             if (p.isShared) return false;
+            if (this.isParticipantProcessed(p)) return false; // Skip already processed
             const folderId = this.findFolderIdForParticipant(p.nama);
             return folderId !== null;
         });
@@ -393,6 +550,10 @@ class BatchShareMonitor {
         this.progressStats.total = participantsToProcess.length;
 
         console.log(`📂 Found ${participantsToProcess.length} participants to process with ${this.workerCount} workers`);
+        
+        if (this.processedParticipants.size > 0) {
+            console.log(`🔄 Resuming from previous session (${this.processedParticipants.size} already processed)`);
+        }
 
         if (participantsToProcess.length === 0) {
             console.log('✅ No participants need folder sharing');
@@ -449,6 +610,10 @@ class BatchShareMonitor {
             const checkCompletion = () => {
                 if (this.taskQueue.length === 0 && this.progressStats.activeWorkers === 0) {
                     this.terminateWorkers();
+                    
+                    // Final history save
+                    this.saveProcessingHistory();
+                    
                     resolve();
                 } else {
                     setTimeout(checkCompletion, 500);
@@ -626,7 +791,21 @@ class BatchShareMonitor {
 }
 
 async function main() {
+    // Validate environment variables first
+    validateEnvironmentVariables();
+    
     const monitor = new BatchShareMonitor();
+
+    // Handle graceful shutdown
+    const gracefulShutdown = () => {
+        console.log('\n🛑 Received shutdown signal. Saving progress...');
+        monitor.saveProcessingHistory();
+        console.log('💾 Progress saved. Exiting gracefully.');
+        process.exit(0);
+    };
+
+    process.on('SIGINT', gracefulShutdown);
+    process.on('SIGTERM', gracefulShutdown);
 
     try {
         const initialized = await monitor.initialize();
@@ -636,6 +815,9 @@ async function main() {
 
         monitor.loadCachedParticipants();
         monitor.loadScanResults();
+        
+        // Load previous processing history for resume functionality
+        monitor.loadProcessingHistory();
 
         await monitor.processBatchSharing();
         await monitor.saveDetailedResults();
@@ -643,10 +825,18 @@ async function main() {
 
         monitor.printDetailedSummary();
 
+        // Clean up history file after successful completion
+        monitor.cleanupHistory();
+
         console.log('\n✅ Batch folder sharing completed successfully!');
 
     } catch (error) {
         console.error('❌ Fatal error:', error.message);
+        
+        // Save current progress before exiting
+        console.log('💾 Saving current progress before exit...');
+        monitor.saveProcessingHistory();
+        
         process.exit(1);
     }
 }

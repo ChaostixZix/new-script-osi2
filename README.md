@@ -1,3 +1,8 @@
+# Script yang sekarang dipake
+- scan_folder.js -> buat cache scan folder id
+- monitor_share.js -> buat share batch dengna monitor table
+- cache_peserta.js -> untuk membuat cache dari google sheet dengan nama peserta
+
 # Google Drive Cache Scanner
 
 A Node.js script that uses Google APIs to scan parent folder's children with 2 depth levels and caches the results for efficient access.
