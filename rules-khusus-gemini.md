@@ -1,8 +1,3 @@
-# User Rules
-- dont be detailed n readme, just put concise minimal instruction, this app is for me only
-- don't start your own server unless sepcifically asked to, never start npm or bun (bun run or npm start or npm run) let me do it, don't test it yourself
-
-
 # Using Gemini CLI for Targeted Feature Analysis
 
 - Please use targeted analysis before implementing task - focus on SPECIFIC functions/features, NOT entire codebase
