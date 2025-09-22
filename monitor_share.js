@@ -192,9 +192,31 @@ class BatchShareMonitor {
                 console.log(`📂 Loaded ${this.errorLog.length} previous errors`);
             }
 
-            // Update progress stats
+            // Update progress stats with validation
             if (historyData.progressStats) {
-                this.progressStats = { ...this.progressStats, ...historyData.progressStats };
+                const histStats = historyData.progressStats;
+                // Only load stats if they make sense
+                if (histStats.total > 0 && 
+                    histStats.processed >= 0 && 
+                    histStats.processed <= histStats.total &&
+                    histStats.successful >= 0 && 
+                    histStats.failed >= 0 &&
+                    histStats.successful + histStats.failed <= histStats.processed) {
+                    this.progressStats = { 
+                        ...this.progressStats, 
+                        ...histStats 
+                    };
+                } else {
+                    console.log('⚠️ Corrupted progress stats detected, starting fresh');
+                    this.progressStats = {
+                        total: 0,
+                        processed: 0,
+                        successful: 0,
+                        failed: 0,
+                        errors: 0,
+                        activeWorkers: 0
+                    };
+                }
             }
 
             console.log('✅ Processing history loaded successfully');
@@ -248,6 +270,196 @@ class BatchShareMonitor {
         if (this.processedParticipants.size - this.lastBatchSave >= this.batchSize) {
             this.saveProcessingHistory();
             this.lastBatchSave = this.processedParticipants.size;
+        }
+    }
+
+    /**
+     * Update local cache file immediately after successful share
+     */
+    updateLocalCache(participant, isShared, lastLog) {
+        try {
+            const cachePath = './cache_peserta.json';
+            if (fs.existsSync(cachePath)) {
+                const cacheData = JSON.parse(fs.readFileSync(cachePath, 'utf8'));
+                
+                // Find and update the participant in cache
+                const participantIndex = cacheData.participants.findIndex(p => 
+                    p.row === participant.row && p.email === participant.email
+                );
+                
+                if (participantIndex !== -1) {
+                    cacheData.participants[participantIndex].isShared = isShared;
+                    cacheData.participants[participantIndex].lastLog = lastLog;
+                    
+                    fs.writeFileSync(cachePath, JSON.stringify(cacheData, null, 2));
+                    console.log(`📝 Updated local cache for ${participant.nama}`);
+                    
+                    // Emit real-time update for dashboard
+                    this.emitDashboardUpdate(cacheData);
+                }
+            }
+        } catch (error) {
+            console.error('❌ Error updating local cache:', error.message);
+        }
+    }
+
+    /**
+     * Validate and fix progress stats to prevent corruption
+     */
+    validateProgressStats() {
+        // Ensure processed never exceeds total
+        if (this.progressStats.processed > this.progressStats.total) {
+            console.log(`⚠️ Progress validation: processed (${this.progressStats.processed}) exceeds total (${this.progressStats.total}), adjusting...`);
+            this.progressStats.processed = this.progressStats.total;
+        }
+        
+        // Ensure successful + failed <= processed
+        const totalCompleted = this.progressStats.successful + this.progressStats.failed;
+        if (totalCompleted > this.progressStats.processed) {
+            console.log(`⚠️ Progress validation: successful + failed (${totalCompleted}) exceeds processed (${this.progressStats.processed}), adjusting...`);
+            // Adjust proportionally
+            const ratio = this.progressStats.processed / totalCompleted;
+            this.progressStats.successful = Math.floor(this.progressStats.successful * ratio);
+            this.progressStats.failed = Math.floor(this.progressStats.failed * ratio);
+        }
+        
+        // Ensure individual counts are non-negative
+        this.progressStats.successful = Math.max(0, this.progressStats.successful);
+        this.progressStats.failed = Math.max(0, this.progressStats.failed);
+        this.progressStats.errors = Math.max(0, this.progressStats.errors);
+        this.progressStats.activeWorkers = Math.max(0, Math.min(this.progressStats.activeWorkers, this.workerCount));
+    }
+
+    /**
+     * Emit speed and progress update
+     */
+    emitSpeedUpdate() {
+        // Validate stats before emitting
+        this.validateProgressStats();
+        
+        const now = new Date();
+        const elapsed = Math.floor((now - this.startTime) / 1000);
+        const throughput = elapsed > 0 ? (this.progressStats.processed / elapsed).toFixed(2) : '0';
+        const eta = this.progressStats.processed > 0 ?
+            Math.floor((elapsed / this.progressStats.processed) * this.progressStats.total) - elapsed : 0;
+        
+        console.log(`SPEED_UPDATE: ${JSON.stringify({
+            speed: parseFloat(throughput),
+            unit: 'second',
+            processed: this.progressStats.processed,
+            total: this.progressStats.total,
+            successful: this.progressStats.successful,
+            failed: this.progressStats.failed,
+            activeWorkers: this.progressStats.activeWorkers,
+            workerCount: this.workerCount,
+            eta: eta > 0 ? eta : null,
+            timestamp: new Date().toISOString()
+        })}`);
+    }
+
+    /**
+     * Emit dashboard update via console (parsed by server.js)
+     */
+    emitDashboardUpdate(cacheData) {
+        const unsharedCount = cacheData.participants.filter(p => !p.isShared).length;
+        const totalParticipants = cacheData.totalParticipants;
+        const sharedCount = totalParticipants - unsharedCount;
+        const successRate = totalParticipants > 0 ? ((sharedCount / totalParticipants) * 100).toFixed(1) : 0;
+        
+        // Calculate actual failed count (excluding folder issues)
+        const actualFailedCount = this.shareResults.filter(r => !r.success && r.issueType !== 'NO_FOLDER').length;
+        const folderIssueCount = this.shareResults.filter(r => r.issueType === 'NO_FOLDER').length;
+        
+        console.log(`DASHBOARD_UPDATE: ${JSON.stringify({
+            totalParticipants,
+            unsharedCount,
+            sharedCount,
+            failedCount: actualFailedCount,
+            folderIssues: folderIssueCount,
+            successRate: parseFloat(successRate),
+            timestamp: new Date().toISOString()
+        })}`);
+    }
+
+    /**
+     * Emit results update for detailed issues table
+     */
+    emitResultsUpdate() {
+        // Group results by participant to get only the last error per participant
+        const participantResults = new Map();
+        
+        // Process all results, keeping only the latest result for each participant
+        this.shareResults.forEach(result => {
+            const key = `${result.participant.nama}|${result.participant.email}`;
+            const existing = participantResults.get(key);
+            
+            // Keep only the latest result
+            if (!existing || 
+                (result.timestamp && existing.timestamp && result.timestamp > existing.timestamp)) {
+                participantResults.set(key, result);
+            }
+        });
+        
+        // Convert to array and filter for issues
+        const latestResults = Array.from(participantResults.values());
+        const issues = latestResults.filter(r => !r.success || r.issueType);
+        const successfulResults = latestResults.filter(r => r.success);
+        
+        // Limit the number of issues to prevent JSON parsing errors
+        const maxIssues = 50;
+        const limitedIssues = issues.slice(0, maxIssues);
+        
+        const issueSummary = {
+            totalIssues: issues.length,
+            noFolder: issues.filter(r => r.issueType === 'NO_FOLDER').length,
+            emailIssues: issues.filter(r => r.issueType === 'EMAIL_INVALID').length,
+            permissionIssues: issues.filter(r => r.issueType === 'PERMISSION_DENIED').length,
+            truncated: issues.length > maxIssues,
+            truncatedCount: issues.length - maxIssues,
+            detailedIssues: [
+                ...limitedIssues.map(issue => ({
+                    name: this.sanitizeString(issue.participant.nama),
+                    email: this.sanitizeString(issue.participant.email),
+                    issueType: issue.issueType || 'UNKNOWN',
+                    details: this.sanitizeString((issue.details || issue.error || '').substring(0, 100)), // Reduce detail length
+                    status: issue.status || 'FAILED',
+                    timestamp: issue.timestamp || new Date().toISOString()
+                })),
+                // Add some successful shares for context
+                ...successfulResults.slice(0, 5).map(success => ({ // Reduce successful examples
+                    name: this.sanitizeString(success.participant.nama),
+                    email: this.sanitizeString(success.participant.email),
+                    issueType: 'SUCCESS',
+                    details: 'Folder shared successfully',
+                    status: 'COMPLETED',
+                    timestamp: success.timestamp || new Date().toISOString()
+                }))
+            ]
+        };
+        
+        console.log(`RESULTS_UPDATE: ${JSON.stringify(issueSummary)}`);
+    }
+
+    /**
+     * Sanitize string to prevent JSON parsing errors
+     */
+    sanitizeString(str) {
+        if (!str) return '';
+        try {
+            // First try to stringify to catch any issues
+            return str.toString()
+                .replace(/[\x00-\x1F\x7F]/g, '') // Remove control characters
+                .replace(/[\u2028\u2029]/g, '') // Remove line/paragraph separators
+                .replace(/\\/g, '\\\\') // Escape backslashes
+                .replace(/"/g, '\\"') // Escape quotes
+                .replace(/\n/g, '\\n') // Escape newlines
+                .replace(/\r/g, '\\r') // Escape carriage returns
+                .replace(/\t/g, '\\t') // Escape tabs
+                .replace(/[\u0000-\u001F\u200B-\u200D\uFEFF]/g, '') // Remove more invisible chars
+                .trim(); // Remove leading/trailing whitespace
+        } catch (e) {
+            // If anything fails, return a safe string
+            return '[INVALID_STRING]';
         }
     }
 
@@ -339,65 +551,80 @@ class BatchShareMonitor {
             Math.floor((elapsed / this.progressStats.processed) * this.progressStats.total) : 0;
         const eta = estimatedTotal - elapsed;
 
-        const table = new Table({
-            head: ['Metric', 'Value', 'Percentage'],
-            colWidths: [20, 12, 15]
-        });
-
         const percentage = (count) => this.progressStats.total > 0 ?
             ((count / this.progressStats.total) * 100).toFixed(1) + '%' : '0%';
 
         const queueLength = this.taskQueue.length;
         const throughput = elapsed > 0 ? (this.progressStats.processed / elapsed).toFixed(2) : '0';
 
-        table.push(
-            ['📊 Total Participants', this.progressStats.total, '100%'],
-            ['👥 Active Workers', `${this.progressStats.activeWorkers}/${this.workerCount}`, '---'],
-            ['📋 Queue Length', queueLength, '---'],
-            ['🔄 Processed', this.progressStats.processed, percentage(this.progressStats.processed)],
-            ['✅ Successful', this.progressStats.successful, percentage(this.progressStats.successful)],
-            ['❌ Failed', this.progressStats.failed, percentage(this.progressStats.failed)],
-            ['⚠️ Errors', this.progressStats.errors, percentage(this.progressStats.errors)],
-            ['⚡ Throughput', `${throughput}/s`, '---'],
-            ['⏱️ Elapsed Time', `${elapsed}s`, '---'],
-            ['⏳ ETA', eta > 0 ? `${eta}s` : '---', '---']
-        );
-
-        console.clear();
+        // Web-friendly output instead of console.clear()
+        console.log('\n'.repeat(2)); // Add spacing instead of clear
         console.log('🚀 MULTI-WORKER FOLDER SHARING MONITOR');
         console.log('======================================');
-        console.log(table.toString());
+        
+        // Web-friendly progress output
+        const progressPercentage = (count) => this.progressStats.total > 0 ? 
+            ((count / this.progressStats.total) * 100).toFixed(1) : 0;
+        console.log(`PROGRESS: Processed ${this.progressStats.processed} / ${this.progressStats.total} (${progressPercentage(this.progressStats.processed)}%)`);
+        console.log(`STATUS: ${this.progressStats.successful} successful, ${this.progressStats.failed} failed, ${this.progressStats.errors} errors`);
+        console.log(`WORKERS: ${this.progressStats.activeWorkers}/${this.workerCount} active, ${queueLength} in queue`);
+        console.log(`SPEED: ${throughput} per second, ETA: ${eta > 0 ? `${eta}s` : 'calculating...'}`);
+        console.log(`TIME: Elapsed ${elapsed}s`);
+        
+        // Emit speed update for web interface
+        console.log(`SPEED_UPDATE: ${JSON.stringify({
+            speed: parseFloat(throughput),
+            unit: 'second',
+            processed: this.progressStats.processed,
+            total: this.progressStats.total,
+            successful: this.progressStats.successful,
+            failed: this.progressStats.failed,
+            activeWorkers: this.progressStats.activeWorkers,
+            workerCount: this.workerCount,
+            eta: eta > 0 ? eta : null,
+            timestamp: new Date().toISOString()
+        })}`);
 
-        // Worker status table
-        const workerTable = new Table({
-            head: ['Worker', 'Status', 'Current Task', 'Completed', 'Errors'],
-            colWidths: [8, 10, 25, 10, 8]
-        });
-
+        // Worker status in web-friendly format
+        console.log('\n👥 WORKER STATUS:');
         this.workerStats.forEach(worker => {
             const statusIcon = worker.status === 'working' ? '🔄' :
                              worker.status === 'error' ? '❌' : '💤';
             const currentTask = worker.currentParticipant ?
-                worker.currentParticipant.substring(0, 20) + '...' : '---';
-
-            workerTable.push([
-                `W${worker.id}`,
-                `${statusIcon} ${worker.status}`,
-                currentTask,
-                worker.tasksCompleted,
-                worker.errors
-            ]);
+                worker.currentParticipant.substring(0, 30) + '...' : 'idle';
+            
+            console.log(`Worker ${worker.id}: ${statusIcon} ${worker.status.toUpperCase()} - ${currentTask} (${worker.tasksCompleted} completed, ${worker.errors} errors)`);
         });
 
-        console.log('\n👥 Worker Status:');
-        console.log(workerTable.toString());
-
         if (this.errorLog.length > 0) {
-            console.log('\n🔴 Recent Errors:');
+            console.log('\n🔴 RECENT ERRORS:');
             const recentErrors = this.errorLog.slice(-3);
             recentErrors.forEach((error, index) => {
-                console.log(`${index + 1}. ${error.participant} - ${error.error}`);
+                console.log(`${index + 1}. ${error.participant}: ${error.error}`);
             });
+        }
+
+        // CLI Table for terminal users (optional)
+        if (process.stdout.isTTY) {
+            const table = new Table({
+                head: ['Metric', 'Value', 'Percentage'],
+                colWidths: [20, 12, 15]
+            });
+
+            table.push(
+                ['📊 Total Participants', this.progressStats.total, '100%'],
+                ['👥 Active Workers', `${this.progressStats.activeWorkers}/${this.workerCount}`, '---'],
+                ['📋 Queue Length', queueLength, '---'],
+                ['🔄 Processed', this.progressStats.processed, percentage(this.progressStats.processed)],
+                ['✅ Successful', this.progressStats.successful, percentage(this.progressStats.successful)],
+                ['❌ Failed', this.progressStats.failed, percentage(this.progressStats.failed)],
+                ['⚠️ Errors', this.progressStats.errors, percentage(this.progressStats.errors)],
+                ['⚡ Throughput', `${throughput}/s`, '---'],
+                ['⏱️ Elapsed Time', `${elapsed}s`, '---'],
+                ['⏳ ETA', eta > 0 ? `${eta}s` : '---', '---']
+            );
+
+            console.log('\n' + table.toString());
         }
     }
 
@@ -452,6 +679,7 @@ class BatchShareMonitor {
             case 'initialized':
                 worker.status = 'idle';
                 console.log(`🔧 Worker ${workerId} initialized and ready`);
+                console.log(`WORKER_STATUS: Worker ${workerId} is now idle`);
                 break;
 
             case 'success':
@@ -459,13 +687,34 @@ class BatchShareMonitor {
                 worker.tasksCompleted++;
                 worker.currentParticipant = null;
 
+                // Add timestamp to result
+                result.timestamp = new Date().toISOString();
                 this.shareResults.push(result);
                 this.progressStats.processed++;
                 this.progressStats.successful++;
                 this.progressStats.activeWorkers--;
+                
+                // Validate stats to prevent corruption
+                this.validateProgressStats();
+
+                // Web-friendly progress output
+                const percentage = this.progressStats.total > 0 ? 
+                    ((this.progressStats.processed / this.progressStats.total) * 100).toFixed(1) : 0;
+                console.log(`SUCCESS: Shared folder with ${result.participant.nama} (${result.participant.email})`);
+                console.log(`PROGRESS: Processed ${this.progressStats.processed}/${this.progressStats.total} (${percentage}%) - Success: ${this.progressStats.successful}, Failed: ${this.progressStats.failed}`);
+                console.log(`WORKER_STATUS: Worker ${workerId} completed task and is now idle`);
 
                 // Mark participant as processed
                 this.markParticipantProcessed(result.participant);
+
+                // Update local cache immediately
+                this.updateLocalCache(result.participant, true, new Date().toISOString());
+
+                // Emit results update
+                this.emitResultsUpdate();
+                
+                // Emit speed update
+                this.emitSpeedUpdate();
 
                 // Add to batch updates
                 this.batchUpdates.push({
@@ -496,13 +745,28 @@ class BatchShareMonitor {
                 };
 
                 this.errorLog.push(errorInfo);
+                // Add timestamp to result
+                result.timestamp = new Date().toISOString();
                 this.shareResults.push(result);
                 this.progressStats.processed++;
                 this.progressStats.failed++;
                 this.progressStats.activeWorkers--;
+                
+                // Validate stats to prevent corruption
+                this.validateProgressStats();
+
+                // Web-friendly error output
+                const errorPercentage = this.progressStats.total > 0 ? 
+                    ((this.progressStats.processed / this.progressStats.total) * 100).toFixed(1) : 0;
+                console.log(`ERROR: Failed to share folder with ${result.participant.nama} - ${result.error}`);
+                console.log(`PROGRESS: Processed ${this.progressStats.processed}/${this.progressStats.total} (${errorPercentage}%) - Success: ${this.progressStats.successful}, Failed: ${this.progressStats.failed}`);
+                console.log(`WORKER_STATUS: Worker ${workerId} encountered error and is now idle`);
 
                 // Mark participant as processed (even if failed)
                 this.markParticipantProcessed(result.participant);
+                
+                // Emit speed update
+                this.emitSpeedUpdate();
 
                 // Add to batch updates
                 this.batchUpdates.push({
@@ -533,6 +797,12 @@ class BatchShareMonitor {
         worker.currentParticipant = task.participant.nama;
         this.progressStats.activeWorkers++;
 
+        console.log(`WORKER_STATUS: Worker ${workerId} is now working on ${task.participant.nama}`);
+        console.log(`PROGRESS_UPDATE: Processed ${this.progressStats.processed} / ${this.progressStats.total} (${this.progressStats.activeWorkers} workers active)`);
+        
+        // Emit speed update
+        this.emitSpeedUpdate();
+
         this.workers[workerId].postMessage({
             type: 'share',
             task
@@ -541,15 +811,22 @@ class BatchShareMonitor {
 
     async processWithWorkers() {
         const participantsToProcess = this.cachedParticipants.filter(p => {
-            if (p.isShared) return false;
-            if (this.isParticipantProcessed(p)) return false; // Skip already processed
-            const folderId = this.findFolderIdForParticipant(p.nama);
-            return folderId !== null;
+            if (p.isShared) {
+                console.log(`⏭️ Skipping ${p.nama} - already shared in sheets`);
+                return false;
+            }
+            if (this.isParticipantProcessed(p)) return false; // Skip already processed in this session
+            // Include ALL unshared participants regardless of folder existence
+            return true;
         });
 
         this.progressStats.total = participantsToProcess.length;
 
         console.log(`📂 Found ${participantsToProcess.length} participants to process with ${this.workerCount} workers`);
+        console.log(`📊 Breakdown: ${participantsToProcess.filter(p => this.findFolderIdForParticipant(p.nama) !== null).length} with folders, ${participantsToProcess.filter(p => this.findFolderIdForParticipant(p.nama) === null).length} without folders`);
+        
+        const alreadySharedCount = this.cachedParticipants.filter(p => p.isShared).length;
+        console.log(`📋 ${alreadySharedCount} participants already shared (skipped)`);
         
         if (this.processedParticipants.size > 0) {
             console.log(`🔄 Resuming from previous session (${this.processedParticipants.size} already processed)`);
@@ -565,26 +842,39 @@ class BatchShareMonitor {
             const folderId = this.findFolderIdForParticipant(participant.nama);
 
             if (!folderId) {
-                // Handle participants without folders immediately
+                // Handle participants without folders - record as issue but don't update cache
                 const errorResult = {
                     success: false,
                     error: 'Folder ID not found',
                     participant,
-                    folderId: null
+                    folderId: null,
+                    issueType: 'NO_FOLDER',
+                    details: `No matching folder found for name: "${participant.nama}". Check if folder name matches participant name exactly.`,
+                    status: 'PENDING'
                 };
 
+                // Add timestamp to error result
+                errorResult.timestamp = new Date().toISOString();
                 this.shareResults.push(errorResult);
                 this.progressStats.processed++;
                 this.progressStats.errors++;
+                
+                // Validate stats to prevent corruption
+                this.validateProgressStats();
 
+                // Don't update cache for folder issues - they remain as pending
+                // But add to batch updates with note
                 this.batchUpdates.push({
                     range: `Form Response 1!I${participant.row}`,
-                    values: [['FALSE']]
+                    values: [['FALSE']] // Keep as unshared
                 });
                 this.batchUpdates.push({
                     range: `Form Response 1!J${participant.row}`,
-                    values: [[`Failed: ${new Date().toISOString()}`]]
+                    values: [[`Issue: No folder found - ${new Date().toISOString()}`]]
                 });
+
+                // Emit results update
+                this.emitResultsUpdate();
                 continue;
             }
 
@@ -633,9 +923,17 @@ class BatchShareMonitor {
 
     async processBatchSharing() {
         console.log('🚀 Starting multi-worker folder sharing process...');
+        console.log(`INIT: Processing ${this.progressStats.total} participants with ${this.workerCount} workers`);
+        console.log(`PROGRESS_START: Total=${this.progressStats.total}, Workers=${this.workerCount}`);
+        
         await this.processWithWorkers();
         this.displayMonitoringTable();
+        
+        const totalTime = Math.floor((new Date() - this.startTime) / 1000);
+        const finalSpeed = totalTime > 0 ? (this.progressStats.processed / totalTime).toFixed(2) : 0;
+        
         console.log(`\n✅ Completed multi-worker processing`);
+        console.log(`FINAL_STATS: Processed=${this.progressStats.processed}, Successful=${this.progressStats.successful}, Failed=${this.progressStats.failed}, Time=${totalTime}s, Speed=${finalSpeed}/s`);
     }
 
     async saveDetailedResults() {
@@ -829,6 +1127,16 @@ async function main() {
         monitor.cleanupHistory();
 
         console.log('\n✅ Batch folder sharing completed successfully!');
+        
+        // Auto-rescan to update dashboard with accurate pending shares count
+        console.log('🔄 Starting auto-rescan to update dashboard...');
+        const { execSync } = require('child_process');
+        try {
+            execSync('node cache_peserta.js', { stdio: 'inherit' });
+            console.log('✅ Auto-rescan completed - dashboard updated with latest pending shares count');
+        } catch (error) {
+            console.error('❌ Auto-rescan failed:', error.message);
+        }
 
     } catch (error) {
         console.error('❌ Fatal error:', error.message);

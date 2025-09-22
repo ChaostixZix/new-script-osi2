@@ -43,6 +43,14 @@ This project contains Node.js scripts designed to automate Google Drive folder s
 3. **Share Phase**: `share_peserta_folder.js` matches and shares folders with participants
 4. **Update Phase**: Google Sheets updated with sharing status and timestamps
 
+## Web Interface Fixes
+
+### Fix: Inconsistent Results Tab Display
+
+-   **Problem**: The "Results" tab showed data in two different formats. When results were streamed via WebSocket, they had one structure. When results were loaded by fetching from the `/api/logs/share` endpoint, the structure was different. This led to inconsistent and sometimes broken display of information.
+-   **Solution**: A client-side conversion function, `convertApiToWebSocketFormat`, was added to `public/index.html`. This function intercepts the data from the API call and reformats it to match the structure used by the WebSocket events.
+-   **Outcome**: The "Results" tab now consistently displays the same information format, regardless of whether the data is loaded on-demand via the API or updated in real-time through the WebSocket connection. This ensures a seamless and reliable user experience.
+
 ## Security Notes
 - `service.json` contains sensitive credentials and should be kept private
 - Uses Google Cloud service account for API authentication

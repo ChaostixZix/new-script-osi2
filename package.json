@@ -1,17 +1,24 @@
 {
-  "name": "google-drive-cache-scanner",
+  "name": "google-drive-sharing-manager",
   "version": "1.0.0",
-  "description": "Script to scan Google Drive folder children with 2 depth levels",
-  "main": "cache.js",
+  "description": "Automated Google Drive folder sharing system with web interface",
+  "main": "server.js",
   "dependencies": {
     "googleapis": "^128.0.0",
     "dotenv": "^16.3.1",
-    "cli-table3": "^0.6.3"
+    "cli-table3": "^0.6.3",
+    "express": "^4.18.2",
+    "socket.io": "^4.7.2"
   },
   "scripts": {
-    "start": "node cache.js",
-    "cache-peserta": "node cache_peserta.js",
-    "share-folders": "node share_peserta_folder.js",
-    "full-process": "npm run start && npm run cache-peserta && npm run share-folders"
+    "dev": "node server.js",
+    "start": "node server.js",
+    "scan": "node scan_folder.js",
+    "cache": "node cache_peserta.js", 
+    "share": "node monitor_share.js",
+    "full-process": "npm run scan && npm run cache && npm run share"
+  },
+  "engines": {
+    "node": ">=14.0.0"
   }
 }

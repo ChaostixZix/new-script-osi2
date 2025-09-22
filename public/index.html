@@ -1,0 +1,1686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DriveShare Pro - Automated Google Drive Sharing</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap');
+        
+        * {
+            font-family: 'Space Grotesk', sans-serif;
+        }
+        
+.gradient-bg {
+    background: linear-gradient(135deg, #1e293b 0%, #334155 50%, #475569 100%);
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
+}
+        
+.glass-effect {
+    backdrop-filter: blur(20px);
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+}
+        
+        .log-terminal {
+            background: #0f172a;
+            color: #e2e8f0;
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+        
+        .log-entry {
+            padding: 8px 16px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.2s ease;
+        }
+        
+        .log-entry:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+        
+.log-info { color: #38bdf8; }
+.log-success { color: #10b981; }
+.log-warning { color: #f59e0b; }
+.log-error { color: #ef4444; }
+.log-debug { color: #8b5cf6; }
+        
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+            animation: pulse 2s infinite;
+        }
+        
+.status-online { background: #10b981; }
+.status-busy { background: #f59e0b; }
+.status-offline { background: #ef4444; }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .progress-ring {
+            transform: rotate(-90deg);
+        }
+        
+        .worker-card {
+            transition: all 0.3s ease;
+            transform-style: preserve-3d;
+        }
+        
+        .worker-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+        }
+        
+        .metric-card {
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            border: 1px solid rgba(226, 232, 240, 0.8);
+            backdrop-filter: blur(10px);
+        }
+        
+        .metric-card:hover {
+            transform: translateY(-8px) scale(1.02);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(99, 102, 241, 0.1);
+            border-color: rgba(99, 102, 241, 0.2);
+        }
+        
+        .animate-bounce-slow {
+            animation: bounce 3s infinite;
+        }
+        
+        @keyframes bounce {
+            0%, 20%, 53%, 80%, 100% { transform: translate3d(0,0,0); }
+            40%, 43% { transform: translate3d(0, -15px, 0); }
+            70% { transform: translate3d(0, -7px, 0); }
+            90% { transform: translate3d(0, -3px, 0); }
+        }
+        
+        .shimmer {
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+            background-size: 200% 100%;
+            animation: shimmer 2s infinite;
+        }
+        
+        @keyframes shimmer {
+            0% { background-position: -200% 0; }
+            100% { background-position: 200% 0; }
+        }
+        
+        /* Modern Button Styles */
+.btn-modern {
+    background: linear-gradient(135deg, #3b82f6 0%, #6366f1 100%);
+    border: none;
+    border-radius: 12px;
+    padding: 12px 24px;
+    font-weight: 600;
+    font-size: 14px;
+    color: white;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 4px 14px 0 rgba(59, 130, 246, 0.3);
+    position: relative;
+    overflow: hidden;
+}
+        
+.btn-modern:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 25px 0 rgba(59, 130, 246, 0.4);
+    background: linear-gradient(135deg, #2563eb 0%, #5b21b6 100%);
+}
+        
+        .btn-modern:active {
+            transform: translateY(0);
+        }
+        
+        .btn-modern::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+            transition: left 0.5s;
+        }
+        
+        .btn-modern:hover::before {
+            left: 100%;
+        }
+        
+        /* Modern Card Styles */
+.card-modern {
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 20px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+        
+.card-modern:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+    border-color: rgba(59, 130, 246, 0.3);
+}
+        
+        /* Modern Table Styles */
+.table-modern {
+    background: rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(20px);
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+}
+        
+.table-modern th {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.05) 100%);
+    font-weight: 600;
+    color: #e2e8f0;
+    border: none;
+    padding: 16px 24px;
+}
+        
+.table-modern td {
+    padding: 16px 24px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    transition: background-color 0.2s ease;
+    color: #e2e8f0;
+}
+        
+.table-modern tbody tr:hover {
+    background: rgba(59, 130, 246, 0.1);
+}
+        
+        /* Modern Badge Styles */
+        .badge-modern {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border: 1px solid transparent;
+            transition: all 0.2s ease;
+        }
+        
+        .badge-success {
+            background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+            color: white;
+            box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+        }
+        
+        .badge-error {
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            color: white;
+            box-shadow: 0 2px 8px rgba(239, 68, 68, 0.3);
+        }
+        
+        .badge-warning {
+            background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+            color: white;
+            box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
+        }
+        
+        .badge-info {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            color: white;
+            box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+        }
+        
+        /* Modern Progress Bar */
+        .progress-modern {
+            background: rgba(226, 232, 240, 0.3);
+            border-radius: 12px;
+            height: 8px;
+            overflow: hidden;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        
+.progress-fill-modern {
+    background: linear-gradient(90deg, #3b82f6 0%, #6366f1 50%, #8b5cf6 100%);
+    height: 100%;
+    border-radius: 12px;
+    transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.4);
+}
+
+/* Tab Styling */
+.tab-btn {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    border: 1px solid transparent;
+    position: relative;
+    overflow: hidden;
+}
+
+.tab-btn.active {
+    background: linear-gradient(135deg, #3b82f6 0%, #6366f1 50%, #8b5cf6 100%);
+    color: white;
+    box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
+    border-color: rgba(59, 130, 246, 0.3);
+}
+
+.tab-btn:not(.active) {
+    background: rgba(255, 255, 255, 0.05);
+    color: #94a3b8;
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+.tab-btn:not(.active):hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #e2e8f0;
+    border-color: rgba(255, 255, 255, 0.2);
+    transform: translateY(-1px);
+}
+
+/* Override Tailwind classes for dark theme */
+.text-slate-700 {
+    color: #e2e8f0 !important;
+}
+
+.text-gray-500 {
+    color: #94a3b8 !important;
+}
+
+.bg-slate-100 {
+    background-color: rgba(255, 255, 255, 0.05) !important;
+}
+
+.hover\:bg-slate-200:hover {
+    background-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+.bg-gradient-to-r.from-indigo-500.to-purple-500 {
+    background: linear-gradient(135deg, #3b82f6 0%, #6366f1 50%, #8b5cf6 100%) !important;
+}
+    </style>
+</head>
+<body class="bg-gradient-to-br from-slate-900 via-slate-800 to-slate-700 min-h-screen">
+    <!-- Header -->
+    <header class="gradient-bg text-white shadow-2xl relative overflow-hidden">
+        <div class="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent"></div>
+        <div class="container mx-auto px-8 py-8 relative z-10">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center space-x-6">
+                    <div class="w-16 h-16 bg-white/20 backdrop-blur-sm rounded-2xl flex items-center justify-center border border-white/30 shadow-lg">
+                        <i class="fas fa-share-alt text-3xl"></i>
+                    </div>
+                    <div>
+                        <h1 class="text-3xl font-bold tracking-tight">DriveShare Pro</h1>
+                        <p class="text-white/90 text-base font-medium">Automated Google Drive Sharing Platform</p>
+                    </div>
+                </div>
+                <div class="flex items-center space-x-6">
+                    <div class="flex items-center space-x-3 bg-white/20 backdrop-blur-sm px-4 py-2 rounded-xl border border-white/30">
+                        <span class="status-indicator status-online"></span>
+                        <span class="text-sm font-medium">System Online</span>
+                    </div>
+                    <button onclick="loadSystemStatus()" class="bg-white/20 hover:bg-white/30 backdrop-blur-sm px-4 py-3 rounded-xl transition-all duration-300 border border-white/30 hover:scale-105">
+                        <i class="fas fa-sync-alt text-lg"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="container mx-auto px-6 py-8">
+        <!-- Status Dashboard -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8 mb-12">
+            <div class="card-modern p-8">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-slate-600 text-sm font-semibold uppercase tracking-wide mb-2">Total Folders</p>
+                        <p class="text-4xl font-bold text-slate-900" id="totalFolders">-</p>
+                    </div>
+                    <div class="w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl flex items-center justify-center shadow-lg">
+                        <i class="fas fa-folder text-white text-xl"></i>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card-modern p-8">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-slate-600 text-sm font-semibold uppercase tracking-wide mb-2">Participants</p>
+                        <p class="text-4xl font-bold text-slate-900" id="totalParticipants">-</p>
+                    </div>
+                    <div class="w-16 h-16 bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-2xl flex items-center justify-center shadow-lg">
+                        <i class="fas fa-users text-white text-xl"></i>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card-modern p-8">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-slate-600 text-sm font-semibold uppercase tracking-wide mb-2">Pending Shares</p>
+                        <p class="text-4xl font-bold text-slate-900" id="unsharedCount">-</p>
+                    </div>
+                    <div class="w-16 h-16 bg-gradient-to-br from-amber-500 to-amber-600 rounded-2xl flex items-center justify-center shadow-lg">
+                        <i class="fas fa-clock text-white text-xl"></i>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card-modern p-8">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-slate-600 text-sm font-semibold uppercase tracking-wide mb-2">Success Rate</p>
+                        <p class="text-4xl font-bold text-slate-900" id="successRate">-</p>
+                    </div>
+                    <div class="w-16 h-16 bg-gradient-to-br from-violet-500 to-violet-600 rounded-2xl flex items-center justify-center shadow-lg">
+                        <i class="fas fa-chart-line text-white text-xl"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Control Panel -->
+        <div class="card-modern mb-12">
+            <div class="p-8 border-b border-slate-200/50">
+                <h2 class="text-2xl font-bold text-slate-900 mb-2">Control Panel</h2>
+                <p class="text-slate-600 text-base">Execute automated workflows with modern interface</p>
+            </div>
+            <div class="p-8">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <button onclick="runScan()" id="scanBtn" 
+                            class="btn-modern flex items-center justify-center space-x-3 py-4 px-6">
+                        <i class="fas fa-search text-lg"></i>
+                        <span class="font-semibold">Scan Drive</span>
+                    </button>
+                    
+                    <button onclick="runCache()" id="cacheBtn"
+                            class="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white px-6 py-4 rounded-xl font-semibold transition-all duration-300 transform hover:scale-105 hover:shadow-lg flex items-center justify-center space-x-3">
+                        <i class="fas fa-database text-lg"></i>
+                        <span>Cache Data</span>
+                    </button>
+                    
+                    <button onclick="runShare()" id="shareBtn"
+                            class="bg-gradient-to-r from-violet-500 to-violet-600 hover:from-violet-600 hover:to-violet-700 text-white px-6 py-4 rounded-xl font-semibold transition-all duration-300 transform hover:scale-105 hover:shadow-lg flex items-center justify-center space-x-3">
+                        <i class="fas fa-share-nodes text-lg"></i>
+                        <span>Share Folders</span>
+                    </button>
+                    
+                    <button onclick="runAll()" id="runAllBtn"
+                            class="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 hover:from-indigo-600 hover:via-purple-600 hover:to-pink-600 text-white px-6 py-4 rounded-xl font-semibold transition-all duration-300 transform hover:scale-105 hover:shadow-lg flex items-center justify-center space-x-3">
+                        <i class="fas fa-rocket text-lg"></i>
+                        <span>Run All</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Progress Monitor -->
+        <div id="progressSection" class="card-modern mb-12 hidden">
+            <div class="p-8 border-b border-slate-200/50">
+                <h3 class="text-2xl font-bold text-slate-900" id="currentOperation">Initializing...</h3>
+            </div>
+            <div class="p-8">
+                <div class="mb-8">
+                    <div class="flex justify-between items-center mb-4">
+                        <span class="text-sm font-semibold text-slate-700 uppercase tracking-wide">Progress</span>
+                        <span class="text-lg font-bold text-slate-900" id="progressText">0%</span>
+                    </div>
+                    <div class="progress-modern">
+                        <div id="progressFill" class="progress-fill-modern" style="width: 0%"></div>
+                    </div>
+                </div>
+                
+                <!-- Worker Status Grid -->
+                <div id="workerStatus" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
+                    <!-- Worker cards will be dynamically inserted here -->
+                </div>
+                
+                <!-- Live Stats -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
+                    <div class="bg-gradient-to-br from-slate-50 to-slate-100 rounded-2xl p-6 border border-slate-200/50">
+                        <div class="text-sm text-slate-600 mb-2 font-semibold uppercase tracking-wide">Processing Speed</div>
+                        <div class="text-3xl font-bold text-slate-900" id="processingSpeed">0/min</div>
+                    </div>
+                    <div class="bg-gradient-to-br from-slate-50 to-slate-100 rounded-2xl p-6 border border-slate-200/50">
+                        <div class="text-sm text-slate-600 mb-2 font-semibold uppercase tracking-wide">Active Workers</div>
+                        <div class="text-3xl font-bold text-slate-900" id="activeWorkers">0/0</div>
+                    </div>
+                    <div class="bg-gradient-to-br from-slate-50 to-slate-100 rounded-2xl p-6 border border-slate-200/50">
+                        <div class="text-sm text-slate-600 mb-2 font-semibold uppercase tracking-wide">Time Remaining</div>
+                        <div class="text-3xl font-bold text-slate-900" id="timeRemaining">--:--</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab Navigation -->
+        <div class="card-modern">
+            <div class="border-b border-slate-200/50">
+                <nav class="flex space-x-2 px-8 py-2" aria-label="Tabs">
+                    <button onclick="switchTab('overview')" class="tab-btn active bg-gradient-to-r from-indigo-500 to-purple-500 text-white py-3 px-6 rounded-xl text-sm font-semibold transition-all duration-300 shadow-lg" data-tab="overview">
+                        <i class="fas fa-chart-pie mr-2"></i>Overview
+                    </button>
+                    <button onclick="switchTab('config')" class="tab-btn bg-slate-100 hover:bg-slate-200 text-slate-700 py-3 px-6 rounded-xl text-sm font-semibold transition-all duration-300" data-tab="config">
+                        <i class="fas fa-cog mr-2"></i>Configuration
+                    </button>
+                    <button onclick="switchTab('logs')" class="tab-btn bg-slate-100 hover:bg-slate-200 text-slate-700 py-3 px-6 rounded-xl text-sm font-semibold transition-all duration-300" data-tab="logs">
+                        <i class="fas fa-terminal mr-2"></i>Live Logs
+                    </button>
+                    <button onclick="switchTab('results')" class="tab-btn bg-slate-100 hover:bg-slate-200 text-slate-700 py-3 px-6 rounded-xl text-sm font-semibold transition-all duration-300" data-tab="results">
+                        <i class="fas fa-chart-bar mr-2"></i>Results
+                    </button>
+                </nav>
+            </div>
+
+            <!-- Tab Contents -->
+            <div class="p-8">
+                <!-- Overview Tab -->
+                <div id="overviewTab" class="tab-content">
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        <div class="bg-gradient-to-br from-slate-50 to-slate-100 rounded-2xl p-8 border border-slate-200/50">
+                            <h3 class="text-xl font-bold text-slate-900 mb-6">System Health</h3>
+                            <div id="systemStatus" class="space-y-4">
+                                <!-- System status will be loaded here -->
+                            </div>
+                        </div>
+                        
+                        <div class="bg-gradient-to-br from-slate-50 to-slate-100 rounded-2xl p-8 border border-slate-200/50">
+                            <h3 class="text-xl font-bold text-slate-900 mb-6">Recent Activity</h3>
+                            <div id="recentActivity" class="space-y-4">
+                                <p class="text-slate-500 text-center py-12 text-lg">No recent activity</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Performance Chart -->
+                    <div class="mt-8 bg-gradient-to-br from-slate-50 to-slate-100 rounded-2xl p-8 border border-slate-200/50">
+                        <h3 class="text-xl font-bold text-slate-900 mb-6">Performance Overview</h3>
+                        <div class="relative" style="height: 350px;">
+                            <canvas id="performanceChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Configuration Tab -->
+                <div id="configTab" class="tab-content hidden">
+                    <form id="configForm" class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <div>
+                            <label class="block text-sm font-semibold text-slate-700 mb-3 uppercase tracking-wide">Google Sheet ID</label>
+                            <input type="text" name="GOOGLE_SHEET_ID" 
+                                   class="w-full px-6 py-4 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all bg-white/80 backdrop-blur-sm"
+                                   placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-semibold text-slate-700 mb-3 uppercase tracking-wide">Worksheet Name</label>
+                            <input type="text" name="WORKSHEET_NAME"
+                                   class="w-full px-6 py-4 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all bg-white/80 backdrop-blur-sm"
+                                   placeholder="Form Response 1">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-semibold text-slate-700 mb-3 uppercase tracking-wide">Google Drive Folder ID</label>
+                            <input type="text" name="FOLDER_ID"
+                                   class="w-full px-6 py-4 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all bg-white/80 backdrop-blur-sm"
+                                   placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-semibold text-slate-700 mb-3 uppercase tracking-wide">Worker Count</label>
+                            <input type="number" name="WORKER_COUNT" min="1" max="32"
+                                   class="w-full px-6 py-4 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all bg-white/80 backdrop-blur-sm"
+                                   placeholder="4">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-semibold text-slate-700 mb-3 uppercase tracking-wide">Batch Size</label>
+                            <input type="number" name="BATCH_SIZE" min="1" max="100"
+                                   class="w-full px-6 py-4 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition-all bg-white/80 backdrop-blur-sm"
+                                   placeholder="10">
+                        </div>
+                        
+                        <div class="flex items-end">
+                            <button type="submit" class="w-full btn-modern py-4 px-6 text-base font-semibold">
+                                <i class="fas fa-save mr-2"></i>Save Configuration
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Logs Tab -->
+                <div id="logsTab" class="tab-content hidden">
+                    <div class="flex justify-between items-center mb-6">
+                        <h3 class="text-xl font-bold text-slate-900">Live Process Logs</h3>
+                        <div class="space-x-4">
+                            <button onclick="clearLogs()" class="bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white px-6 py-3 rounded-xl text-sm font-semibold transition-all duration-300 transform hover:scale-105 shadow-lg">
+                                <i class="fas fa-trash mr-2"></i>Clear
+                            </button>
+                            <button onclick="toggleLogAutoscroll()" id="autoscrollBtn" class="bg-gradient-to-r from-slate-500 to-slate-600 hover:from-slate-600 hover:to-slate-700 text-white px-6 py-3 rounded-xl text-sm font-semibold transition-all duration-300 transform hover:scale-105 shadow-lg">
+                                <i class="fas fa-sync-alt mr-2"></i>Auto-scroll: ON
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="log-terminal h-[500px] overflow-y-auto rounded-2xl border border-slate-200/50 shadow-lg" id="logsContainer">
+                        <div class="log-entry log-info">
+                            <i class="fas fa-info-circle mr-3"></i>
+                            <span>Log system initialized. Waiting for process output...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Results Tab -->
+                <div id="resultsTab" class="tab-content hidden">
+                    <div id="resultsContent">
+                        <div class="grid grid-cols-1 lg:grid-cols-4 gap-8 mb-8">
+                            <!-- Issue Summary Cards -->
+                            <div class="card-modern p-8">
+                                <div class="flex items-center justify-between mb-4">
+                                    <h3 class="text-lg font-bold text-slate-700">Total Issues</h3>
+                                    <div class="w-12 h-12 bg-gradient-to-br from-amber-500 to-amber-600 rounded-xl flex items-center justify-center shadow-lg">
+                                        <i class="fas fa-exclamation-triangle text-white"></i>
+                                    </div>
+                                </div>
+                                <p class="text-4xl font-bold text-slate-900 mb-2" id="totalIssuesCount">0</p>
+                                <p class="text-sm text-slate-500 font-medium">participants with problems</p>
+                            </div>
+                            
+                            <div class="card-modern p-8">
+                                <div class="flex items-center justify-between mb-4">
+                                    <h3 class="text-lg font-bold text-slate-700">No Folder</h3>
+                                    <div class="w-12 h-12 bg-gradient-to-br from-red-500 to-red-600 rounded-xl flex items-center justify-center shadow-lg">
+                                        <i class="fas fa-folder-open text-white"></i>
+                                    </div>
+                                </div>
+                                <p class="text-4xl font-bold text-slate-900 mb-2" id="noFolderCount">0</p>
+                                <p class="text-sm text-slate-500 font-medium">folder not found</p>
+                            </div>
+                            
+                            <div class="card-modern p-8">
+                                <div class="flex items-center justify-between mb-4">
+                                    <h3 class="text-lg font-bold text-slate-700">Email Issues</h3>
+                                    <div class="w-12 h-12 bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl flex items-center justify-center shadow-lg">
+                                        <i class="fas fa-envelope text-white"></i>
+                                    </div>
+                                </div>
+                                <p class="text-4xl font-bold text-slate-900 mb-2" id="emailIssuesCount">0</p>
+                                <p class="text-sm text-slate-500 font-medium">invalid email format</p>
+                            </div>
+                            
+                            <div class="card-modern p-8">
+                                <div class="flex items-center justify-between mb-4">
+                                    <h3 class="text-lg font-bold text-slate-700">Permission</h3>
+                                    <div class="w-12 h-12 bg-gradient-to-br from-violet-500 to-violet-600 rounded-xl flex items-center justify-center shadow-lg">
+                                        <i class="fas fa-lock text-white"></i>
+                                    </div>
+                                </div>
+                                <p class="text-4xl font-bold text-slate-900 mb-2" id="permissionIssuesCount">0</p>
+                                <p class="text-sm text-slate-500 font-medium">access denied</p>
+                            </div>
+                        </div>
+
+                        <!-- Results Table -->
+                        <div class="table-modern">
+                            <div class="px-8 py-6 border-b border-slate-200/50">
+                                <h3 class="text-xl font-bold text-slate-700">Detailed Issues Report</h3>
+                            </div>
+                            <div class="overflow-x-auto">
+                                <table class="min-w-full">
+                                    <thead>
+                                        <tr>
+                                            <th class="px-8 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Name</th>
+                                            <th class="px-8 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Email</th>
+                                            <th class="px-8 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Issue Type</th>
+                                            <th class="px-8 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Details</th>
+                                            <th class="px-8 py-4 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider">Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="resultsTableBody">
+                                        <tr>
+                                            <td colspan="5" class="px-8 py-12 text-center text-slate-500">
+                                                <i class="fas fa-inbox text-5xl mb-4 block text-slate-300"></i>
+                                                <p class="text-lg font-medium">No issues found or run sharing process first</p>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="notification" class="fixed top-4 right-4 z-50 hidden">
+        <div class="bg-white border border-gray-200 rounded-lg shadow-lg p-4 min-w-80">
+            <div class="flex items-center">
+                <div id="notificationIcon" class="mr-3"></div>
+                <div>
+                    <p id="notificationTitle" class="font-medium text-gray-900"></p>
+                    <p id="notificationMessage" class="text-sm text-gray-600"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Socket.IO -->
+    <script src="/socket.io/socket.io.js"></script>
+    
+    <script>
+        // Initialize Socket.IO with auto-reconnect
+        const socket = io({
+            reconnection: true,
+            reconnectionAttempts: 5,
+            reconnectionDelay: 1000,
+            reconnectionDelayMax: 5000
+        });
+        
+        // Global state
+        let currentProcess = null;
+        let systemStatus = {};
+        let autoScroll = true;
+        let performanceChart = null;
+        let startTime = null;
+        let processedCount = 0;
+        
+        // Socket event handlers
+        socket.on('connect', () => {
+            console.log('✅ Connected to server');
+            loadSystemStatus();
+            restoreDashboardData();
+            restoreResultsData();
+            showNotification('Connected', 'Server connection established', 'success');
+        });
+
+        socket.on('disconnect', () => {
+            console.log('❌ Disconnected from server');
+            showNotification('Disconnected', 'Server connection lost. Attempting to reconnect...', 'warning');
+        });
+
+        socket.on('reconnect', (attemptNumber) => {
+            console.log(`🔄 Reconnected after ${attemptNumber} attempts`);
+            showNotification('Reconnected', `Server connection restored after ${attemptNumber} attempts`, 'success');
+        });
+
+        socket.on('reconnect_failed', () => {
+            console.log('❌ Failed to reconnect to server');
+            showNotification('Connection Failed', 'Unable to reconnect to server. Please refresh the page.', 'error');
+        });
+
+        socket.on('scan:output', (data) => handleProcessOutput('scan', data));
+        socket.on('cache:output', (data) => handleProcessOutput('cache', data));
+        socket.on('share:output', (data) => handleProcessOutput('share', data));
+        
+        socket.on('scan:error', (data) => handleProcessError('scan', data));
+        socket.on('cache:error', (data) => handleProcessError('cache', data));
+        socket.on('share:error', (data) => handleProcessError('share', data));
+        
+        socket.on('scan:complete', (data) => handleProcessComplete('scan', data));
+        socket.on('cache:complete', (data) => handleProcessComplete('cache', data));
+        socket.on('share:complete', (data) => handleProcessComplete('share', data));
+        
+        socket.on('share:progress', (data) => updateProgress(data));
+        socket.on('share:workerStatus', (data) => updateWorkerStatus(data));
+        socket.on('share:speed', (data) => updateSpeed(data));
+        socket.on('dashboard:update', (data) => updateDashboardStats(data));
+        socket.on('results:update', (data) => updateResultsTable(data));
+        socket.on('status:update', () => loadSystemStatus());
+
+        // Utility functions
+        function showNotification(title, message, type = 'info') {
+            const notification = document.getElementById('notification');
+            const titleEl = document.getElementById('notificationTitle');
+            const messageEl = document.getElementById('notificationMessage');
+            const iconEl = document.getElementById('notificationIcon');
+            
+            titleEl.textContent = title;
+            messageEl.textContent = message;
+            
+            const icons = {
+                success: '<i class="fas fa-check-circle text-green-500"></i>',
+                error: '<i class="fas fa-exclamation-circle text-red-500"></i>',
+                info: '<i class="fas fa-info-circle text-blue-500"></i>',
+                warning: '<i class="fas fa-exclamation-triangle text-yellow-500"></i>'
+            };
+            
+            iconEl.innerHTML = icons[type] || icons.info;
+            
+            notification.classList.remove('hidden');
+            
+            setTimeout(() => {
+                notification.classList.add('hidden');
+            }, 4000);
+        }
+
+        function updateButtonState(btn, loading = false, text = null) {
+            if (loading) {
+                btn.disabled = true;
+                const originalContent = btn.innerHTML;
+                btn.setAttribute('data-original', originalContent);
+                btn.innerHTML = `<div class="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>${text || 'Processing...'}`;
+            } else {
+                btn.disabled = false;
+                const original = btn.getAttribute('data-original');
+                btn.innerHTML = original || btn.innerHTML;
+            }
+        }
+
+        // Load system status
+        async function loadSystemStatus() {
+            try {
+                const response = await fetch('/api/status');
+                systemStatus = await response.json();
+                updateStatusDisplay();
+                updateOverviewStats();
+                updatePerformanceChart();
+            } catch (error) {
+                console.error('Failed to load status:', error);
+                showNotification('Error', 'Failed to load system status', 'error');
+            }
+        }
+
+        function updateStatusDisplay() {
+            const container = document.getElementById('systemStatus');
+            const { scanResults, cacheResults, shareResults, environment } = systemStatus;
+            
+            container.innerHTML = `
+                <div class="flex items-center justify-between p-3 bg-white rounded-lg border">
+                    <div class="flex items-center">
+                        <i class="fas fa-search text-blue-600 mr-3"></i>
+                        <span class="font-medium">Scan Results</span>
+                    </div>
+                    <span class="px-3 py-1 rounded-full text-xs font-medium ${scanResults.exists ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
+                        ${scanResults.exists ? 'Ready' : 'Missing'}
+                    </span>
+                </div>
+                
+                <div class="flex items-center justify-between p-3 bg-white rounded-lg border">
+                    <div class="flex items-center">
+                        <i class="fas fa-database text-green-600 mr-3"></i>
+                        <span class="font-medium">Cache Results</span>
+                    </div>
+                    <span class="px-3 py-1 rounded-full text-xs font-medium ${cacheResults.exists ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
+                        ${cacheResults.exists ? 'Ready' : 'Missing'}
+                    </span>
+                </div>
+                
+                <div class="flex items-center justify-between p-3 bg-white rounded-lg border">
+                    <div class="flex items-center">
+                        <i class="fas fa-share-nodes text-purple-600 mr-3"></i>
+                        <span class="font-medium">Share Results</span>
+                    </div>
+                    <span class="px-3 py-1 rounded-full text-xs font-medium ${shareResults.exists ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}">
+                        ${shareResults.exists ? 'Available' : 'None'}
+                    </span>
+                </div>
+                
+                <div class="flex items-center justify-between p-3 bg-white rounded-lg border">
+                    <div class="flex items-center">
+                        <i class="fas fa-key text-yellow-600 mr-3"></i>
+                        <span class="font-medium">Service Account</span>
+                    </div>
+                    <span class="px-3 py-1 rounded-full text-xs font-medium ${environment.hasServiceAccount ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}">
+                        ${environment.hasServiceAccount ? 'Found' : 'Missing'}
+                    </span>
+                </div>
+                
+                <div class="flex items-center justify-between p-3 bg-white rounded-lg border">
+                    <div class="flex items-center">
+                        <i class="fas fa-cog text-indigo-600 mr-3"></i>
+                        <span class="font-medium">Configuration</span>
+                    </div>
+                    <span class="px-3 py-1 rounded-full text-xs font-medium ${environment.hasSheetId && environment.hasFolderId ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}">
+                        ${environment.hasSheetId && environment.hasFolderId ? 'Complete' : 'Incomplete'}
+                    </span>
+                </div>
+            `;
+        }
+
+        function updateOverviewStats() {
+            const { scanResults, cacheResults, shareResults } = systemStatus;
+            
+            const totalFolders = scanResults.data?.totalFolders || 0;
+            const totalParticipants = cacheResults.data?.totalParticipants || 0;
+            const unsharedCount = cacheResults.data?.unsharedCount || 0;
+            const successfulShares = shareResults.data?.successfulShares || 0;
+            const failedShares = shareResults.data?.failedShares || 0;
+            
+            document.getElementById('totalFolders').textContent = totalFolders.toLocaleString();
+            document.getElementById('totalParticipants').textContent = totalParticipants.toLocaleString();
+            document.getElementById('unsharedCount').textContent = unsharedCount.toLocaleString();
+            
+            const successRate = totalParticipants > 0 ? Math.round((successfulShares / totalParticipants) * 100) : 0;
+            document.getElementById('successRate').textContent = `${successRate}%`;
+            
+            // Update recent activity
+            const activityContainer = document.getElementById('recentActivity');
+            const activities = [];
+            
+            if (scanResults.exists) {
+                activities.push({
+                    icon: 'fas fa-check-circle text-green-600',
+                    text: 'Drive scan completed',
+                    time: scanResults.stats?.modified ? new Date(scanResults.stats.modified).toLocaleString() : 'Unknown'
+                });
+            }
+            
+            if (cacheResults.exists) {
+                activities.push({
+                    icon: 'fas fa-check-circle text-green-600',
+                    text: 'Participant data cached',
+                    time: cacheResults.stats?.modified ? new Date(cacheResults.stats.modified).toLocaleString() : 'Unknown'
+                });
+            }
+            
+            if (shareResults.exists) {
+                activities.push({
+                    icon: 'fas fa-check-circle text-green-600',
+                    text: `Sharing completed (${successfulShares} successful)`,
+                    time: shareResults.stats?.modified ? new Date(shareResults.stats.modified).toLocaleString() : 'Unknown'
+                });
+            }
+            
+            if (activities.length === 0) {
+                activityContainer.innerHTML = '<p class="text-gray-500 text-center py-8">No recent activity</p>';
+            } else {
+                activityContainer.innerHTML = activities.map(activity => `
+                    <div class="flex items-center justify-between p-3 bg-white rounded-lg border">
+                        <div class="flex items-center">
+                            <i class="${activity.icon} mr-3"></i>
+                            <span class="font-medium">${activity.text}</span>
+                        </div>
+                        <span class="text-sm text-gray-500">${activity.time}</span>
+                    </div>
+                `).join('');
+            }
+        }
+
+        function updatePerformanceChart(realtimeData = null) {
+            const ctx = document.getElementById('performanceChart').getContext('2d');
+            
+            if (performanceChart) {
+                performanceChart.destroy();
+            }
+            
+            // Use realtime data if provided, otherwise use system status
+            let successfulShares, failedShares, unsharedCount;
+            
+            if (realtimeData) {
+                successfulShares = realtimeData.sharedCount || 0;
+                failedShares = realtimeData.failedCount || 0;
+                unsharedCount = realtimeData.unsharedCount || 0;
+            } else {
+                const { scanResults, cacheResults, shareResults } = systemStatus;
+                successfulShares = shareResults.data?.successfulShares || 0;
+                failedShares = shareResults.data?.failedShares || 0;
+                unsharedCount = cacheResults.data?.unsharedCount || 0;
+            }
+            const total = successfulShares + failedShares + unsharedCount;
+            
+            // If no data, show empty state
+            if (total === 0) {
+                const canvas = document.getElementById('performanceChart');
+                const container = canvas.parentElement;
+                container.innerHTML = `
+                    <div class="flex flex-col items-center justify-center h-full text-gray-500">
+                        <i class="fas fa-chart-pie text-4xl mb-4 opacity-50"></i>
+                        <p class="text-center">No performance data available.<br>Run sharing process to see statistics.</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            // Restore canvas if it was replaced
+            const container = document.getElementById('performanceChart').parentElement;
+            if (!document.getElementById('performanceChart')) {
+                container.innerHTML = '<canvas id="performanceChart"></canvas>';
+            }
+            
+            const newCtx = document.getElementById('performanceChart').getContext('2d');
+            
+            performanceChart = new Chart(newCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Successful', 'Failed', 'Pending'],
+                    datasets: [{
+                        data: [successfulShares, failedShares, unsharedCount],
+                        backgroundColor: ['#10b981', '#ef4444', '#f59e0b'],
+                        borderWidth: 0,
+                        hoverOffset: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                padding: 15,
+                                usePointStyle: true,
+                                font: {
+                                    size: 12
+                                }
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const label = context.label || '';
+                                    const value = context.parsed || 0;
+                                    const percentage = ((value / total) * 100).toFixed(1);
+                                    return `${label}: ${value.toLocaleString()} (${percentage}%)`;
+                                }
+                            }
+                        }
+                    },
+                    cutout: '60%'
+                }
+            });
+        }
+
+        // Process handlers
+        function handleProcessOutput(process, data) {
+            const logsContainer = document.getElementById('logsContainer');
+            const lines = data.split('\n').filter(line => line.trim());
+            
+            lines.forEach(line => {
+                const logEntry = document.createElement('div');
+                logEntry.className = 'log-entry';
+                
+                let iconClass = 'fas fa-info-circle log-info';
+                let lineClass = 'log-info';
+                
+                if (line.toLowerCase().includes('error') || line.toLowerCase().includes('failed')) {
+                    iconClass = 'fas fa-exclamation-circle log-error';
+                    lineClass = 'log-error';
+                } else if (line.toLowerCase().includes('success') || line.toLowerCase().includes('completed')) {
+                    iconClass = 'fas fa-check-circle log-success';
+                    lineClass = 'log-success';
+                } else if (line.toLowerCase().includes('warning')) {
+                    iconClass = 'fas fa-exclamation-triangle log-warning';
+                    lineClass = 'log-warning';
+                } else if (line.toLowerCase().includes('debug')) {
+                    iconClass = 'fas fa-bug log-debug';
+                    lineClass = 'log-debug';
+                }
+                
+                // Parse structured data from monitor_share output
+                if (process === 'share' && line.includes('Processed')) {
+                    const match = line.match(/Processed\s+(\d+)\s+\/\s+(\d+)/);
+                    if (match) {
+                        processedCount = parseInt(match[1]);
+                        const total = parseInt(match[2]);
+                        updateProgress({ processed: processedCount, total: total });
+                        updateProcessingSpeed();
+                    }
+                }
+                
+                logEntry.innerHTML = `<i class="${iconClass} mr-2"></i><span class="${lineClass}">${line}</span>`;
+                logsContainer.appendChild(logEntry);
+            });
+            
+            if (autoScroll) {
+                logsContainer.scrollTop = logsContainer.scrollHeight;
+            }
+        }
+
+        function handleProcessError(process, data) {
+            showNotification('Process Error', `${process} error: ${data}`, 'error');
+            handleProcessOutput(process, `ERROR: ${data}`);
+        }
+
+        function handleProcessComplete(process, data) {
+            const success = data.code === 0;
+            showNotification(
+                'Process Complete',
+                `${process} process ${success ? 'completed successfully' : 'failed'}`,
+                success ? 'success' : 'error'
+            );
+            
+            currentProcess = null;
+            hideProgress();
+            updateAllButtonStates(false);
+            startTime = null;
+            processedCount = 0;
+            
+            if (success) {
+                loadSystemStatus();
+            }
+        }
+
+        function updateProgress(data) {
+            const { processed, total, successful, failed, activeWorkers, workerCount } = data;
+            const percentage = Math.round((processed / total) * 100);
+            
+            document.getElementById('progressFill').style.width = `${percentage}%`;
+            document.getElementById('progressText').textContent = `${percentage}% (${processed.toLocaleString()}/${total.toLocaleString()})`;
+            
+            // Update additional stats if available
+            if (successful !== undefined && failed !== undefined) {
+                // Update worker status with real data
+                updateWorkerStatus({
+                    processed: processed,
+                    total: total,
+                    activeWorkers: activeWorkers || 0,
+                    workerCount: workerCount || parseInt(process.env.WORKER_COUNT) || 4
+                });
+            } else {
+                // Fallback to old behavior
+                updateWorkerStatus(data);
+            }
+            
+            // Calculate time remaining
+            if (startTime && processed > 0) {
+                const elapsed = Date.now() - startTime;
+                const timePerItem = elapsed / processed;
+                const remaining = Math.round((timePerItem * (total - processed)) / 1000);
+                const minutes = Math.floor(remaining / 60);
+                const seconds = remaining % 60;
+                document.getElementById('timeRemaining').textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+            }
+            
+            // Store progress data for persistence
+            localStorage.setItem('progressData', JSON.stringify({
+                processed: processed,
+                total: total,
+                percentage: Math.round((processed / total) * 100),
+                successful: successful,
+                failed: failed,
+                activeWorkers: activeWorkers || 0,
+                workerCount: workerCount || 4,
+                timestamp: Date.now()
+            }));
+        }
+
+        function updateProcessingSpeed() {
+            if (startTime && processedCount > 0) {
+                const elapsed = (Date.now() - startTime) / 1000 / 60; // minutes
+                const speed = Math.round(processedCount / elapsed);
+                document.getElementById('processingSpeed').textContent = `${speed}/min`;
+            }
+        }
+
+        function updateWorkerStatus(data) {
+            const workerContainer = document.getElementById('workerStatus');
+            const workerCount = parseInt(process.env.WORKER_COUNT) || 4;
+            
+            // If we have real worker data, use it; otherwise simulate
+            if (data && data.workerId !== undefined) {
+                const existingWorker = workerContainer.querySelector(`[data-worker-id="${data.workerId}"]`);
+                if (existingWorker) {
+                    const statusBadge = existingWorker.querySelector('.worker-status');
+                    const statusClass = data.status === 'working' ? 'bg-blue-600' : 
+                                      data.status === 'idle' ? 'bg-gray-400' : 
+                                      data.status === 'error' ? 'bg-red-600' : 'bg-yellow-600';
+                    statusBadge.className = `worker-status px-2 py-1 rounded text-xs ${statusClass}`;
+                    statusBadge.textContent = data.status;
+                } else {
+                    // Create new worker card if it doesn't exist
+                    const workerCard = document.createElement('div');
+                    workerCard.setAttribute('data-worker-id', data.workerId);
+                    workerCard.className = `worker-card p-3 rounded-lg text-center text-white text-sm font-medium`;
+                    const statusClass = data.status === 'working' ? 'bg-blue-600' : 
+                                      data.status === 'idle' ? 'bg-gray-400' : 
+                                      data.status === 'error' ? 'bg-red-600' : 'bg-yellow-600';
+                    workerCard.innerHTML = `
+                        <i class="fas fa-microchip mb-1"></i>
+                        <div>Worker ${data.workerId}</div>
+                        <div class="worker-status px-2 py-1 rounded text-xs ${statusClass}">${data.status}</div>
+                    `;
+                    workerContainer.appendChild(workerCard);
+                }
+            } else {
+                // Simulate worker status based on progress
+                const activeWorkers = Math.min(workerCount, Math.ceil((data.processed / data.total) * workerCount));
+                
+                workerContainer.innerHTML = '';
+                for (let i = 0; i < workerCount; i++) {
+                    const isActive = i < activeWorkers;
+                    const workerCard = document.createElement('div');
+                    workerCard.className = `worker-card p-3 rounded-lg text-center text-white text-sm font-medium ${isActive ? 'bg-blue-600' : 'bg-gray-400'}`;
+                    workerCard.innerHTML = `
+                        <i class="fas fa-microchip mb-1"></i>
+                        <div>Worker ${i + 1}</div>
+                        <div class="text-xs opacity-75">${isActive ? 'Active' : 'Idle'}</div>
+                    `;
+                    workerContainer.appendChild(workerCard);
+                }
+                
+                document.getElementById('activeWorkers').textContent = `${activeWorkers}/${workerCount}`;
+            }
+        }
+
+        function updateSpeed(data) {
+            if (data && data.speed) {
+                let displaySpeed = data.speed;
+                let unit = data.unit;
+                
+                // Normalize to per minute
+                if (unit === 'second') {
+                    displaySpeed = Math.round(data.speed * 60);
+                    unit = 'minute';
+                } else if (unit === 'hour') {
+                    displaySpeed = Math.round(data.speed / 60);
+                    unit = 'minute';
+                }
+                
+                document.getElementById('processingSpeed').textContent = `${displaySpeed}/${unit}`;
+            }
+        }
+
+        function updateDashboardStats(data) {
+            if (data) {
+                // Update pending shares
+                if (data.unsharedCount !== undefined) {
+                    document.getElementById('unsharedCount').textContent = data.unsharedCount.toLocaleString();
+                }
+                
+                // Update success rate
+                if (data.successRate !== undefined) {
+                    document.getElementById('successRate').textContent = `${data.successRate}%`;
+                }
+                
+                // Update performance chart if visible
+                updatePerformanceChart(data);
+                
+                // Store dashboard data locally for persistence
+                localStorage.setItem('dashboardData', JSON.stringify(data));
+                
+                console.log('📊 Dashboard stats updated:', data);
+            }
+        }
+
+        function updateResultsTable(data) {
+            if (data) {
+                console.log('📋 Results table data received:', data);
+                
+                // Safety check - ensure elements exist
+                const totalIssuesEl = document.getElementById('totalIssuesCount');
+                const noFolderEl = document.getElementById('noFolderCount');
+                const emailIssuesEl = document.getElementById('emailIssuesCount');
+                const permissionIssuesEl = document.getElementById('permissionIssuesCount');
+                const tableBodyEl = document.getElementById('resultsTableBody');
+                
+                if (!totalIssuesEl || !noFolderEl || !emailIssuesEl || !permissionIssuesEl || !tableBodyEl) {
+                    console.log('📋 Results tab elements not found, skipping update');
+                    return;
+                }
+                
+                // Update summary cards
+                totalIssuesEl.textContent = (data.totalIssues || 0).toLocaleString();
+                noFolderEl.textContent = (data.noFolder || 0).toLocaleString();
+                emailIssuesEl.textContent = (data.emailIssues || 0).toLocaleString();
+                permissionIssuesEl.textContent = (data.permissionIssues || 0).toLocaleString();
+                
+                // Update detailed table
+                if (data.detailedIssues && data.detailedIssues.length > 0) {
+                    console.log(`📋 Displaying ${data.detailedIssues.length} issues in table`);
+                    tableBodyEl.innerHTML = data.detailedIssues.map(issue => `
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${issue.name || 'N/A'}</td>
+                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${issue.email || 'N/A'}</td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getIssueTypeBadgeClass(issue.issueType)}">
+                                    ${getIssueTypeLabel(issue.issueType)}
+                                </span>
+                            </td>
+                            <td class="px-6 py-4 text-sm text-gray-500 max-w-xs truncate" title="${issue.details || ''}">${issue.details || 'No details available'}</td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full ${getStatusBadgeClass(issue.status)}">
+                                    ${issue.status}
+                                </span>
+                            </td>
+                        </tr>
+                    `).join('');
+                } else {
+                    let message = 'No issues found! All participants processed successfully.';
+                    if (data.error) {
+                        message = `Unable to display detailed results: ${data.error}`;
+                    } else if (data.totalIssues === 0) {
+                        message = 'Run the sharing process first to see results here.';
+                    }
+                    
+                    tableBodyEl.innerHTML = `
+                        <tr>
+                            <td colspan="5" class="px-6 py-8 text-center text-gray-500">
+                                <i class="fas fa-${data.error ? 'exclamation-triangle' : 'info-circle'} text-4xl mb-2 block text-${data.error ? 'yellow' : 'blue'}-300"></i>
+                                ${message}
+                            </td>
+                        </tr>
+                    `;
+                }
+                
+                // Store results data locally for persistence
+                localStorage.setItem('resultsData', JSON.stringify(data));
+            }
+        }
+
+        function getIssueTypeBadgeClass(issueType) {
+            const classes = {
+                'NO_FOLDER': 'badge-modern badge-error',
+                'EMAIL_INVALID': 'badge-modern badge-warning',
+                'PERMISSION_DENIED': 'badge-modern badge-info',
+                'SUCCESS': 'badge-modern badge-success',
+                'UNKNOWN': 'badge-modern bg-gradient-to-r from-slate-500 to-slate-600 text-white'
+            };
+            return classes[issueType] || classes['UNKNOWN'];
+        }
+
+        function getIssueTypeLabel(issueType) {
+            const labels = {
+                'NO_FOLDER': 'No Folder',
+                'EMAIL_INVALID': 'Email Invalid',
+                'PERMISSION_DENIED': 'Permission Denied',
+                'SUCCESS': 'Success',
+                'UNKNOWN': 'Unknown'
+            };
+            return labels[issueType] || labels['UNKNOWN'];
+        }
+
+        function getStatusBadgeClass(status) {
+            const classes = {
+                'PENDING': 'bg-yellow-100 text-yellow-800',
+                'FAILED': 'bg-red-100 text-red-800',
+                'RESOLVED': 'bg-green-100 text-green-800'
+            };
+            return classes[status] || classes['FAILED'];
+        }
+
+        function restoreDashboardData() {
+            try {
+                const savedData = localStorage.getItem('dashboardData');
+                if (savedData) {
+                    const data = JSON.parse(savedData);
+                    console.log('🔄 Restoring dashboard data from localStorage');
+                    updateDashboardStats(data);
+                }
+            } catch (error) {
+                console.error('Error restoring dashboard data:', error);
+            }
+        }
+
+        function restoreResultsData() {
+            try {
+                const savedData = localStorage.getItem('resultsData');
+                if (savedData) {
+                    const data = JSON.parse(savedData);
+                    console.log('🔄 Restoring results data from localStorage');
+                    updateResultsTable(data);
+                }
+            } catch (error) {
+                console.error('Error restoring results data:', error);
+            }
+        }
+
+        function restoreProgressData() {
+            try {
+                const savedData = localStorage.getItem('progressData');
+                if (savedData) {
+                    const data = JSON.parse(savedData);
+                    console.log('🔄 Restoring progress data from localStorage');
+                    
+                    // Restore progress UI
+                    if (data.processed !== undefined && data.total !== undefined) {
+                        document.getElementById('progressFill').style.width = `${data.percentage}%`;
+                        document.getElementById('progressText').textContent = `${data.percentage}% (${data.processed.toLocaleString()}/${data.total.toLocaleString()})`;
+                        document.getElementById('processedCount').textContent = `${data.processed.toLocaleString()}/${data.total.toLocaleString()}`;
+                        
+                        // Restore worker status
+                        updateWorkerStatus({
+                            processed: data.processed,
+                            total: data.total,
+                            activeWorkers: data.activeWorkers || 0,
+                            workerCount: data.workerCount || 4
+                        });
+                        
+                        // Restore processing speed
+                        if (data.timestamp) {
+                            const elapsed = (Date.now() - data.timestamp) / 1000 / 60; // minutes
+                            if (elapsed > 0 && data.processed > 0) {
+                                const speed = Math.round(data.processed / elapsed);
+                                document.getElementById('processingSpeed').textContent = `${speed}/min`;
+                            }
+                        }
+                        
+                        processedCount = data.processed;
+                    }
+                }
+            } catch (error) {
+                console.error('Error restoring progress data:', error);
+            }
+        }
+
+        // Restore data on page load (before socket connects)
+        document.addEventListener('DOMContentLoaded', () => {
+            restoreDashboardData();
+            restoreResultsData();
+            restoreProgressData();
+        });
+
+        function showProgress(operation) {
+            document.getElementById('progressSection').classList.remove('hidden');
+            document.getElementById('currentOperation').textContent = operation;
+            document.getElementById('progressFill').style.width = '0%';
+            document.getElementById('progressText').textContent = '0%';
+            startTime = Date.now();
+            processedCount = 0;
+        }
+
+        function hideProgress() {
+            document.getElementById('progressSection').classList.add('hidden');
+        }
+
+        function updateAllButtonStates(loading) {
+            const buttons = ['scanBtn', 'cacheBtn', 'shareBtn', 'runAllBtn'];
+            buttons.forEach(id => {
+                const btn = document.getElementById(id);
+                updateButtonState(btn, loading);
+            });
+        }
+
+        // API calls
+        async function runScan() {
+            if (currentProcess) return;
+            
+            currentProcess = 'scan';
+            updateAllButtonStates(true);
+            showProgress('Scanning Google Drive folders...');
+            
+            try {
+                const response = await fetch('/api/scan', { method: 'POST' });
+                const result = await response.json();
+                
+                if (!result.success) {
+                    throw new Error(result.error);
+                }
+                
+                showNotification('Scan Started', 'Google Drive scan process initiated', 'info');
+            } catch (error) {
+                showNotification('Error', `Failed to start scan: ${error.message}`, 'error');
+                currentProcess = null;
+                updateAllButtonStates(false);
+                hideProgress();
+            }
+        }
+
+        async function runCache() {
+            if (currentProcess) return;
+            
+            currentProcess = 'cache';
+            updateAllButtonStates(true);
+            showProgress('Caching participant data...');
+            
+            try {
+                const response = await fetch('/api/cache', { method: 'POST' });
+                const result = await response.json();
+                
+                if (!result.success) {
+                    throw new Error(result.error);
+                }
+                
+                showNotification('Cache Started', 'Participant data caching initiated', 'info');
+            } catch (error) {
+                showNotification('Error', `Failed to start cache: ${error.message}`, 'error');
+                currentProcess = null;
+                updateAllButtonStates(false);
+                hideProgress();
+            }
+        }
+
+        async function runShare() {
+            if (currentProcess) return;
+            
+            currentProcess = 'share';
+            updateAllButtonStates(true);
+            showProgress('Sharing folders with participants...');
+            
+            try {
+                const response = await fetch('/api/share', { method: 'POST' });
+                const result = await response.json();
+                
+                if (!result.success) {
+                    throw new Error(result.error);
+                }
+                
+                showNotification('Share Started', 'Folder sharing process initiated', 'info');
+            } catch (error) {
+                showNotification('Error', `Failed to start share: ${error.message}`, 'error');
+                currentProcess = null;
+                updateAllButtonStates(false);
+                hideProgress();
+            }
+        }
+
+        async function runAll() {
+            showNotification('Workflow Started', 'Starting complete automated workflow...', 'info');
+            
+            // Run sequentially
+            await runScan();
+            
+            // Wait for scan to complete, then run cache
+            const waitForScan = setInterval(() => {
+                if (!currentProcess) {
+                    clearInterval(waitForScan);
+                    setTimeout(async () => {
+                        await runCache();
+                        
+                        // Wait for cache to complete, then run share
+                        const waitForCache = setInterval(() => {
+                            if (!currentProcess) {
+                                clearInterval(waitForCache);
+                                setTimeout(() => runShare(), 1000);
+                            }
+                        }, 1000);
+                    }, 1000);
+                }
+            }, 1000);
+        }
+
+// Tab switching
+function switchTab(tabName) {
+    // Remove active class from all tabs
+    document.querySelectorAll('.tab-btn').forEach(tab => {
+        tab.classList.remove('active');
+        // Reset to inactive state classes
+        tab.className = tab.className.replace(/bg-gradient-to-r from-indigo-500 to-purple-500 text-white shadow-lg/g, '');
+        tab.className = tab.className.replace(/bg-slate-100 hover:bg-slate-200 text-slate-700/g, '');
+        // Add inactive classes
+        tab.classList.add('bg-slate-100', 'hover:bg-slate-200', 'text-slate-700');
+    });
+    
+    // Hide all tab contents
+    document.querySelectorAll('.tab-content').forEach(content => {
+        content.classList.add('hidden');
+    });
+    
+    // Add active class to selected tab
+    const selectedTab = document.querySelector(`[data-tab="${tabName}"]`);
+    selectedTab.classList.add('active');
+    // Replace inactive classes with active classes
+    selectedTab.className = selectedTab.className.replace(/bg-slate-100 hover:bg-slate-200 text-slate-700/g, '');
+    selectedTab.classList.add('bg-gradient-to-r', 'from-indigo-500', 'to-purple-500', 'text-white', 'shadow-lg');
+    
+    // Show selected tab content
+    document.getElementById(tabName + 'Tab').classList.remove('hidden');
+    
+    // Load content if needed
+    if (tabName === 'config') {
+        loadConfiguration();
+    } else if (tabName === 'results') {
+        loadResults();
+    }
+}
+
+        // Configuration management
+        async function loadConfiguration() {
+            try {
+                const response = await fetch('/api/config');
+                const config = await response.json();
+                
+                const form = document.getElementById('configForm');
+                Object.entries(config).forEach(([key, value]) => {
+                    const input = form.querySelector(`[name="${key}"]`);
+                    if (input) input.value = value;
+                });
+            } catch (error) {
+                showNotification('Error', 'Failed to load configuration', 'error');
+            }
+        }
+
+        // Form submission
+        document.getElementById('configForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData(e.target);
+            const config = Object.fromEntries(formData.entries());
+            
+            try {
+                const response = await fetch('/api/config', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(config)
+                });
+                
+                const result = await response.json();
+                if (result.success) {
+                    showNotification('Success', 'Configuration saved successfully', 'success');
+                    loadSystemStatus();
+                }
+            } catch (error) {
+                showNotification('Error', 'Failed to save configuration', 'error');
+            }
+        });
+
+        // Log management
+        function clearLogs() {
+            const logsContainer = document.getElementById('logsContainer');
+            logsContainer.innerHTML = `
+                <div class="log-entry log-info">
+                    <i class="fas fa-info-circle mr-2"></i>
+                    <span>Logs cleared. Waiting for new process output...</span>
+                </div>
+            `;
+        }
+
+        function toggleLogAutoscroll() {
+            autoScroll = !autoScroll;
+            const btn = document.getElementById('autoscrollBtn');
+            btn.innerHTML = `<i class="fas fa-sync-alt mr-2"></i>Auto-scroll: ${autoScroll ? 'ON' : 'OFF'}`;
+            btn.className = autoScroll ? 
+                'bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all' :
+                'bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all';
+        }
+
+        // Results loading
+        async function loadResults() {
+            try {
+                const response = await fetch('/api/logs/share');
+                if (response.ok) {
+                    const results = await response.json();
+                    // Convert API format to WebSocket format for consistency
+                    const convertedData = convertApiToWebSocketFormat(results);
+                    updateResultsTable(convertedData);
+                } else {
+                    // Show empty state with same format as WebSocket
+                    updateResultsTable({
+                        totalIssues: 0,
+                        noFolder: 0,
+                        emailIssues: 0,
+                        permissionIssues: 0,
+                        detailedIssues: [],
+                        error: 'No results available. Run the sharing process first.'
+                    });
+                }
+            } catch (error) {
+                // Show error state with same format as WebSocket
+                updateResultsTable({
+                    totalIssues: 0,
+                    noFolder: 0,
+                    emailIssues: 0,
+                    permissionIssues: 0,
+                    detailedIssues: [],
+                    error: 'Failed to load results.'
+                });
+            }
+        }
+
+        // Convert API data format to WebSocket format for consistency
+        function convertApiToWebSocketFormat(apiData) {
+            const { statistics, errorLog, failedResults, successfulSummary } = apiData;
+            
+            // Count issues by type
+            let noFolder = 0;
+            let emailIssues = 0;
+            let permissionIssues = 0;
+            let totalIssues = 0;
+            
+            // Process failed results to categorize issues
+            if (failedResults && failedResults.length > 0) {
+                failedResults.forEach(result => {
+                    totalIssues++;
+                    if (result.issueType === 'NO_FOLDER') {
+                        noFolder++;
+                    } else if (result.issueType === 'EMAIL_INVALID') {
+                        emailIssues++;
+                    } else if (result.issueType === 'PERMISSION_DENIED') {
+                        permissionIssues++;
+                    }
+                });
+            }
+            
+            // Convert failed results to detailed issues format
+            const detailedIssues = [];
+            
+            // Add failed results
+            if (failedResults && failedResults.length > 0) {
+                failedResults.slice(0, 100).forEach(issue => {
+                    detailedIssues.push({
+                        name: issue.participant?.nama || 'Unknown',
+                        email: issue.participant?.email || issue.email || 'Unknown',
+                        issueType: issue.issueType || 'UNKNOWN',
+                        details: issue.details || issue.error || 'No details available',
+                        status: 'FAILED'
+                    });
+                });
+            }
+            
+            // Add some successful results for context
+            if (successfulSummary && successfulSummary.length > 0) {
+                successfulSummary.slice(0, 10).forEach(success => {
+                    detailedIssues.push({
+                        name: success.nama || 'Unknown',
+                        email: success.email || 'Unknown',
+                        issueType: 'SUCCESS',
+                        details: 'Folder shared successfully',
+                        status: 'COMPLETED'
+                    });
+                });
+            }
+            
+            return {
+                totalIssues,
+                noFolder,
+                emailIssues,
+                permissionIssues,
+                detailedIssues
+            };
+        }
+
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            loadSystemStatus();
+            loadConfiguration();
+        });
+    </script>
+</body>
+</html>
