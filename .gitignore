@@ -3,3 +3,5 @@ service.json
 __MACOSX/
 .DS_Store
 node_modules/
+monitor_share_history.json
+monitor_share_results.json
