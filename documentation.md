@@ -55,3 +55,8 @@ This project contains Node.js scripts designed to automate Google Drive folder s
 - `service.json` contains sensitive credentials and should be kept private
 - Uses Google Cloud service account for API authentication
 - Environment variables stored in `.env` file for configuration
+
+## Web Dashboard UI (public/index.html)
+- Tailwind-driven layout with compact spacing, Space Grotesk typography, and a muted light gradient background.
+- Cards, tables, and badges use rectangular 8-12px radii with subtle borders/shadows for a SaaS look.
+- Primary actions share a restrained blue accent; supporting buttons keep lightweight gradients to stay consistent.
