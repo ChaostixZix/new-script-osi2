@@ -189,41 +189,51 @@ app.post('/api/share', (req, res) => {
     const shareProcess = spawn('node', ['monitor_share.js']);
     activeProcesses.set('share', shareProcess);
 
-    shareProcess.stdout.on('data', (data) => {
-        const output = data.toString();
-        io.emit('share:output', output);
-        
-        // Enhanced parsing for monitor_share output - New web-friendly format
-        let processed = 0;
-        let total = 0;
-        let successful = 0;
-        let failed = 0;
-        let activeWorkers = 0;
-        let workerCount = 0;
-        
+    // Buffer stdout so we only parse complete monitor_share lines (avoids partial JSON).
+    let shareStdoutBuffer = '';
+    const shareState = {
+        processed: 0,
+        total: 0,
+        successful: 0,
+        failed: 0,
+        activeWorkers: 0,
+        workerCount: 0
+    };
+
+    const handleShareLine = (rawLine) => {
+        const line = rawLine.replace(/\r$/, '');
+        if (!line.trim()) {
+            return;
+        }
+
+        let progressUpdated = false;
+
         // Parse PROGRESS: Processed X / Y (Z%)
-        const progressMatch = output.match(/PROGRESS:\s*Processed\s*(\d+)\s*\/\s*(\d+)\s*\(([\d.]+)%\)/i);
+        const progressMatch = line.match(/PROGRESS:\s*Processed\s*(\d+)\s*\/\s*(\d+)\s*\(([\d.]+)%\)/i);
         if (progressMatch) {
-            processed = parseInt(progressMatch[1]);
-            total = parseInt(progressMatch[2]);
+            shareState.processed = parseInt(progressMatch[1]);
+            shareState.total = parseInt(progressMatch[2]);
+            progressUpdated = true;
         }
-        
+
         // Parse STATUS: X successful, Y failed, Z errors
-        const statusMatch = output.match(/STATUS:\s*(\d+)\s*successful,\s*(\d+)\s*failed,\s*(\d+)\s*errors/i);
+        const statusMatch = line.match(/STATUS:\s*(\d+)\s*successful,\s*(\d+)\s*failed,\s*(\d+)\s*errors/i);
         if (statusMatch) {
-            successful = parseInt(statusMatch[1]);
-            failed = parseInt(statusMatch[2]);
+            shareState.successful = parseInt(statusMatch[1]);
+            shareState.failed = parseInt(statusMatch[2]);
+            progressUpdated = true;
         }
-        
+
         // Parse WORKERS: X/Y active, Z in queue
-        const workersMatch = output.match(/WORKERS:\s*(\d+)\/(\d+)\s*active/i);
+        const workersMatch = line.match(/WORKERS:\s*(\d+)\/(\d+)\s*active/i);
         if (workersMatch) {
-            activeWorkers = parseInt(workersMatch[1]);
-            workerCount = parseInt(workersMatch[2]);
+            shareState.activeWorkers = parseInt(workersMatch[1]);
+            shareState.workerCount = parseInt(workersMatch[2]);
+            progressUpdated = true;
         }
-        
+
         // Parse SPEED: X per second, ETA: Y
-        const speedMatch = output.match(/SPEED:\s*([\d.]+)\s*per\s*second/i);
+        const speedMatch = line.match(/SPEED:\s*([\d.]+)\s*per\s*second/i);
         if (speedMatch) {
             io.emit('share:speed', {
                 speed: parseFloat(speedMatch[1]),
@@ -231,12 +241,30 @@ app.post('/api/share', (req, res) => {
                 timestamp: Date.now()
             });
         }
-        
+
         // Parse SPEED_UPDATE JSON format
-        const speedUpdateMatch = output.match(/SPEED_UPDATE:\s*(\{.*\})/i);
+        const speedUpdateMatch = line.match(/SPEED_UPDATE:\s*(\{.*\})/i);
         if (speedUpdateMatch) {
             try {
                 const speedData = JSON.parse(speedUpdateMatch[1]);
+                if (typeof speedData.processed === 'number') {
+                    shareState.processed = speedData.processed;
+                }
+                if (typeof speedData.total === 'number') {
+                    shareState.total = speedData.total;
+                }
+                if (typeof speedData.successful === 'number') {
+                    shareState.successful = speedData.successful;
+                }
+                if (typeof speedData.failed === 'number') {
+                    shareState.failed = speedData.failed;
+                }
+                if (typeof speedData.activeWorkers === 'number') {
+                    shareState.activeWorkers = speedData.activeWorkers;
+                }
+                if (typeof speedData.workerCount === 'number') {
+                    shareState.workerCount = speedData.workerCount;
+                }
                 io.emit('share:speed', {
                     speed: speedData.speed,
                     unit: speedData.unit,
@@ -263,32 +291,33 @@ app.post('/api/share', (req, res) => {
                 console.error('Error parsing speed update:', e);
             }
         }
-        
+
         // Parse PROGRESS_START: Total=X, Workers=Y
-        const startMatch = output.match(/PROGRESS_START:\s*Total=(\d+),\s*Workers=(\d+)/i);
+        const startMatch = line.match(/PROGRESS_START:\s*Total=(\d+),\s*Workers=(\d+)/i);
         if (startMatch) {
-            total = parseInt(startMatch[1]);
-            workerCount = parseInt(startMatch[2]);
+            shareState.total = parseInt(startMatch[1]);
+            shareState.workerCount = parseInt(startMatch[2]);
         }
-        
+
         // Parse FINAL_STATS
-        const finalMatch = output.match(/FINAL_STATS:\s*Processed=(\d+),\s*Successful=(\d+),\s*Failed=(\d+),\s*Time=(\d+)s,\s*Speed=([\d.]+)\/s/i);
+        const finalMatch = line.match(/FINAL_STATS:\s*Processed=(\d+),\s*Successful=(\d+),\s*Failed=(\d+),\s*Time=(\d+)s,\s*Speed=([\d.]+)\/s/i);
         if (finalMatch) {
-            processed = parseInt(finalMatch[1]);
-            successful = parseInt(finalMatch[2]);
-            failed = parseInt(finalMatch[3]);
-            const totalTime = parseInt(finalMatch[4]);
+            shareState.processed = parseInt(finalMatch[1]);
+            shareState.successful = parseInt(finalMatch[2]);
+            shareState.failed = parseInt(finalMatch[3]);
             const finalSpeed = parseFloat(finalMatch[5]);
-            
+
             io.emit('share:speed', {
                 speed: finalSpeed,
                 unit: 'second',
                 timestamp: Date.now()
             });
+            progressUpdated = true;
         }
-        
+
         // Parse DASHBOARD_UPDATE for real-time stats
-        const dashboardMatch = output.match(/DASHBOARD_UPDATE:\s*(\{[\s\S]*?\})/i);
+        // Dashboard payload prints on a single line; grab the whole line to keep nested objects intact.
+        const dashboardMatch = line.match(/DASHBOARD_UPDATE:\s*(\{[^\n]*\})/i);
         if (dashboardMatch) {
             try {
                 const dashboardData = JSON.parse(dashboardMatch[1]);
@@ -297,9 +326,10 @@ app.post('/api/share', (req, res) => {
                 console.error('Error parsing dashboard update:', e);
             }
         }
-        
+
         // Parse RESULTS_UPDATE for detailed issues table
-        const resultsMatch = output.match(/RESULTS_UPDATE:\s*(\{[\s\S]*?\})/i);
+        // Results updates include nested objects; capture the full line so the JSON stays valid.
+        const resultsMatch = line.match(/RESULTS_UPDATE:\s*(\{[^\n]*\})/i);
         if (resultsMatch) {
             try {
                 // Try to parse the JSON
@@ -323,9 +353,9 @@ app.post('/api/share', (req, res) => {
                 });
             }
         }
-        
+
         // Parse worker status from new format
-        const workerStatusMatch = output.match(/WORKER_STATUS:\s*Worker\s*(\d+)\s*is\s*now\s*(\w+)/i);
+        const workerStatusMatch = line.match(/WORKER_STATUS:\s*Worker\s*(\d+)\s*is\s*now\s*(\w+)/i);
         if (workerStatusMatch) {
             io.emit('share:workerStatus', {
                 workerId: parseInt(workerStatusMatch[1]),
@@ -333,9 +363,9 @@ app.post('/api/share', (req, res) => {
                 timestamp: Date.now()
             });
         }
-        
+
         // Parse worker working on specific task
-        const workerWorkingMatch = output.match(/WORKER_STATUS:\s*Worker\s*(\d+)\s*is\s*now\s*working\s*on\s*(.+)/i);
+        const workerWorkingMatch = line.match(/WORKER_STATUS:\s*Worker\s*(\d+)\s*is\s*now\s*working\s*on\s*(.+)/i);
         if (workerWorkingMatch) {
             io.emit('share:workerStatus', {
                 workerId: parseInt(workerWorkingMatch[1]),
@@ -344,43 +374,44 @@ app.post('/api/share', (req, res) => {
                 timestamp: Date.now()
             });
         }
-        
+
         // Fallback to old patterns for compatibility
-        if (processed === 0) {
+        if (!progressMatch) {
             const oldPatterns = [
                 /Processed\s+(\d+)\s*\/\s*(\d+)/i,
                 /Processed\s+(\d+)\s+of\s+(\d+)/i,
                 /Progress:\s*(\d+)\s*\/\s*(\d+)/i,
                 /(\d+)\s*\/\s*(\d+)\s*processed/i
             ];
-            
+
             for (const pattern of oldPatterns) {
-                const match = output.match(pattern);
+                const match = line.match(pattern);
                 if (match) {
-                    processed = parseInt(match[1]);
-                    total = parseInt(match[2]);
+                    shareState.processed = parseInt(match[1]);
+                    shareState.total = parseInt(match[2]);
+                    progressUpdated = true;
                     break;
                 }
             }
         }
-        
+
         // Emit progress if we have valid data
-        if (processed > 0 && total > 0) {
-            console.log(`DEBUG: Emitting progress - Processed: ${processed}, Total: ${total}, Success: ${successful}, Failed: ${failed}`);
+        if (progressUpdated && shareState.processed > 0 && shareState.total > 0) {
+            console.log(`DEBUG: Emitting progress - Processed: ${shareState.processed}, Total: ${shareState.total}, Success: ${shareState.successful}, Failed: ${shareState.failed}`);
             io.emit('share:progress', {
-                processed: processed,
-                total: total,
-                successful: successful,
-                failed: failed,
-                activeWorkers: activeWorkers,
-                workerCount: workerCount,
+                processed: shareState.processed,
+                total: shareState.total,
+                successful: shareState.successful,
+                failed: shareState.failed,
+                activeWorkers: shareState.activeWorkers,
+                workerCount: shareState.workerCount,
                 timestamp: Date.now()
             });
         }
-        
+
         // Parse individual worker patterns (fallback)
-        if (output.includes('Worker') || output.includes('worker')) {
-            const workerMatch = output.match(/(?:Worker|worker)\s*(\d+):\s*(\w+)/i);
+        if (line.includes('Worker') || line.includes('worker')) {
+            const workerMatch = line.match(/(?:Worker|worker)\s*(\d+):\s*(\w+)/i);
             if (workerMatch) {
                 io.emit('share:workerStatus', {
                     workerId: parseInt(workerMatch[1]),
@@ -389,6 +420,26 @@ app.post('/api/share', (req, res) => {
                 });
             }
         }
+    };
+
+    shareProcess.stdout.on('data', (data) => {
+        const chunk = data.toString();
+        io.emit('share:output', chunk);
+
+        shareStdoutBuffer += chunk;
+        let newlineIndex;
+        while ((newlineIndex = shareStdoutBuffer.indexOf('\n')) !== -1) {
+            const line = shareStdoutBuffer.slice(0, newlineIndex);
+            shareStdoutBuffer = shareStdoutBuffer.slice(newlineIndex + 1);
+            handleShareLine(line);
+        }
+    });
+
+    shareProcess.stdout.on('end', () => {
+        if (shareStdoutBuffer.trim().length > 0) {
+            handleShareLine(shareStdoutBuffer);
+        }
+        shareStdoutBuffer = '';
     });
 
     shareProcess.stderr.on('data', (data) => {
