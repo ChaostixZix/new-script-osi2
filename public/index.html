@@ -592,6 +592,7 @@
         let performanceChart = null;
         let startTime = null;
         let processedCount = 0;
+        let receivingSpeedUpdates = false;
         
         // Socket event handlers
         socket.on('connect', () => {
@@ -953,6 +954,7 @@
             updateAllButtonStates(false);
             startTime = null;
             processedCount = 0;
+            receivingSpeedUpdates = false; // Reset speed updates flag
             
             if (success) {
                 loadSystemStatus();
@@ -980,14 +982,16 @@
                 updateWorkerStatus(data);
             }
             
-            // Calculate time remaining
-            if (startTime && processed > 0) {
+            // Calculate time remaining (only if not receiving speed updates)
+            if (!receivingSpeedUpdates && startTime && processed > 0) {
                 const elapsed = Date.now() - startTime;
                 const timePerItem = elapsed / processed;
                 const remaining = Math.round((timePerItem * (total - processed)) / 1000);
                 const minutes = Math.floor(remaining / 60);
                 const seconds = remaining % 60;
                 document.getElementById('timeRemaining').textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+            } else if (!receivingSpeedUpdates) {
+                document.getElementById('timeRemaining').textContent = '--:--';
             }
             
             // Store progress data for persistence
@@ -1063,6 +1067,9 @@
 
         function updateSpeed(data) {
             if (data && data.speed) {
+                // Mark that we're receiving speed updates
+                receivingSpeedUpdates = true;
+                
                 let displaySpeed = data.speed;
                 let unit = data.unit;
                 
@@ -1076,6 +1083,16 @@
                 }
                 
                 document.getElementById('processingSpeed').textContent = `${displaySpeed}/${unit}`;
+                
+                // Update ETA if available
+                if (data.eta !== null && data.eta !== undefined) {
+                    const minutes = Math.floor(data.eta / 60);
+                    const seconds = data.eta % 60;
+                    document.getElementById('timeRemaining').textContent = 
+                        `${minutes}:${seconds.toString().padStart(2, '0')}`;
+                } else {
+                    document.getElementById('timeRemaining').textContent = '--:--';
+                }
             }
         }
 
@@ -1273,8 +1290,11 @@
             document.getElementById('currentOperation').textContent = operation;
             document.getElementById('progressFill').style.width = '0%';
             document.getElementById('progressText').textContent = '0%';
+            document.getElementById('processingSpeed').textContent = '0/min';
+            document.getElementById('timeRemaining').textContent = '--:--';
             startTime = Date.now();
             processedCount = 0;
+            receivingSpeedUpdates = false; // Reset flag for new process
         }
 
         function hideProgress() {
